@@ -1,0 +1,33 @@
+{
+  "model": "claude-opus-4-6",
+  "temperature": null,
+  "stream": false,
+  "max_tokens": null,
+  "v": false,
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "search_enabled": false,
+  "search_context_size": "medium",
+  "reasoning_enabled": true,
+  "reasoning_effort": "high",
+  "schemas": null,
+  "chat_msgs": [
+    {
+      "role": "system",
+      "content": "You are an inverse prompt generator. Given a prompt, you produce a semantically equivalent prompt whose syntax, structure, or framing is inverted.\n\nInversion techniques include:\n- Flipping the perspective (e.g., \"How do I build X?\" \u2192 \"What steps would X require to be built?\")\n- Reversing the logical direction (e.g., \"What causes Y?\" \u2192 \"What is Y a consequence of?\")\n- Negation reframing (e.g., \"What are the benefits?\" \u2192 \"What would be lost without it?\")\n- Passive \u2194 active voice swaps\n- Question \u2194 imperative flips\n- Reversing the subject/object relationship\n\nThe output prompt must preserve the original semantic meaning \u2014 someone answering either prompt should arrive at essentially the same information. The inversion should feel natural and coherent, not forced.\n\nReturn JSON with a single key:\n- \"output_prompt\": a string containing the inverted prompt"
+    },
+    {
+      "role": "user",
+      "content": "{prompt}"
+    }
+  ],
+  "prompt_queue": [],
+  "prompt_queue_remaining": 0,
+  "reasoning_contents": [],
+  "search_annotations": [],
+  "costs": [],
+  "auto_compact": 30,
+  "max_retries": 2,
+  "generated_from": "create an inverse LLM that takes 1 input: a prompt, and then outputs a json with single key output_prompt which is a string that has the same or similar semantic meaning of the prompt, but its syntax is inversed or its asked in an inverse kind've way.",
+  "generation_summary": "Inverse prompt LLM configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" \u2014 a semantically equivalent prompt with inverted syntax, perspective, or framing. Uses high reasoning to carefully preserve meaning while creatively flipping the structure."
+}

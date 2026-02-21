@@ -278,7 +278,7 @@ def _generate_metrics(items, additional_information, prompts, results):
 
     return result.get("metrics", {
         "How clear and well-structured is this?": "1-10",
-        "How accurate and relevant is this?": "1-10",
+        "How interesting and well-written is this?": "1-10",
         "How complete and thorough is this?": "1-10"
     })
 

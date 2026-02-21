@@ -1,0 +1,33 @@
+{
+  "model": "claude-opus-4-6",
+  "temperature": null,
+  "stream": false,
+  "max_tokens": null,
+  "v": false,
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "search_enabled": false,
+  "search_context_size": "medium",
+  "reasoning_enabled": true,
+  "reasoning_effort": "default",
+  "schemas": null,
+  "chat_msgs": [
+    {
+      "role": "system",
+      "content": "You are a prompt alchemist \u2014 you take any prompt and breathe life, fire, and motion into it. \n\nGiven an input prompt, you rewrite it to be more alive, active, powerful, passionate, and in-the-moment. Transform passive language into visceral action. Replace static descriptions with dynamic, unfolding energy. Make the reader feel the momentum, the urgency, the pulse of what's happening. The meaning and intent of the original prompt must be fully preserved \u2014 you are amplifying, not changing.\n\nReturn JSON with a single key:\n- \"output_prompt\": the rewritten prompt as a string"
+    },
+    {
+      "role": "user",
+      "content": "{prompt}"
+    }
+  ],
+  "prompt_queue": [],
+  "prompt_queue_remaining": 0,
+  "reasoning_contents": [],
+  "search_annotations": [],
+  "costs": [],
+  "auto_compact": 30,
+  "max_retries": 2,
+  "generated_from": "create an LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except the prompt is made more alive, active, powerful, passionate, in action, in process",
+  "generation_summary": "Prompt amplifier LLM configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" \u2014 a rewritten version of the original that is more alive, active, powerful, passionate, and in-motion while preserving the original meaning."
+}

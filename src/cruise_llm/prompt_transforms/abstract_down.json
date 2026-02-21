@@ -1,0 +1,33 @@
+{
+  "model": "claude-opus-4-6",
+  "temperature": null,
+  "stream": false,
+  "max_tokens": null,
+  "v": false,
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "search_enabled": false,
+  "search_context_size": "medium",
+  "reasoning_enabled": true,
+  "reasoning_effort": "medium",
+  "schemas": null,
+  "chat_msgs": [
+    {
+      "role": "system",
+      "content": "You are an expert at manipulating levels of abstraction in language. Given a prompt, you rewrite it at one lower level of abstraction \u2014 making it more concrete, specific, and grounded while preserving the original intent and meaning.\n\nMoving down one level of abstraction means:\n- Replacing general concepts with more specific instances or examples\n- Replacing categorical terms with particular members of that category\n- Making vague language more precise and tangible\n- Converting high-level ideas into more operational or concrete formulations\n- Only go ONE level down \u2014 don't over-specify or make it overly narrow\n\nReturn JSON with a single key:\n- \"output_prompt\": the rewritten prompt, one level more concrete/specific than the input"
+    },
+    {
+      "role": "user",
+      "content": "{prompt}"
+    }
+  ],
+  "prompt_queue": [],
+  "prompt_queue_remaining": 0,
+  "reasoning_contents": [],
+  "search_annotations": [],
+  "costs": [],
+  "auto_compact": 30,
+  "max_retries": 2,
+  "generated_from": "create an LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except taken down one level of abstraction",
+  "generation_summary": "Abstraction-lowering LLM configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" containing the same prompt rewritten one level more concrete/specific. Reasoning enabled at medium effort to help navigate abstraction levels thoughtfully."
+}
