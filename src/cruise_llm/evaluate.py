@@ -9,31 +9,36 @@ import random
 import re
 import math
 from itertools import combinations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-def evaluate(
+def pairwise_evaluate(
+    prompt=None,
     prompts=None,
     results=None,
     additional_information='',
-    method='pairwise',
     metrics=None,
     weights=None,
     position_swap=True,
     penalize_verbosity=False,
+    per_metric=False,
+    batch_size=4,
     v=True
 ):
     """
     Evaluate and rank a set of LLM outputs using pairwise comparison.
 
     Args:
+        prompt: Single prompt used for all responses (e.g. original prompt before stretching).
         prompts: List of prompts (optional). If provided with results, evaluates prompt-result pairs.
         results: List of results to evaluate. Required if prompts is empty.
         additional_information: Domain context injected into evaluation prompt.
-        method: Evaluation method. Only 'pairwise' supported in v1.
-        metrics: Dict of {"evaluation question": "scale"}. Empty = auto-generate 3 metrics.
-        weights: Optional dict of metric weights. Keys must match metrics.
+        metrics: List of evaluation questions (e.g. ["How clear?", "How thorough?"]). Empty = auto-generate.
+        weights: Optional dict of metric weights. Keys must match metric strings.
         position_swap: If True, run (A,B) and (B,A) to mitigate position bias.
         penalize_verbosity: If True, add "reward conciseness" to eval prompt.
+        per_metric: If True, make one LLM call per metric (legacy). Default False batches all metrics per comparison.
+        batch_size: Number of pair comparisons to run concurrently. Default 4. Set to 1 for sequential.
         v: Verbose output - print progress.
 
     Returns:
@@ -44,13 +49,18 @@ def evaluate(
     """
     from .LLM import LLM
 
+    if prompt is not None and prompts is not None:
+        raise ValueError("Cannot specify both 'prompt' (singular) and 'prompts' (plural). "
+                         "Use 'prompt' for a single prompt shared across all responses, "
+                         "or 'prompts' for per-response prompts.")
+
     prompts = prompts or []
     results = results or []
-    metrics = metrics if metrics is not None else {}
+    metrics = metrics if metrics is not None else []
 
     # Validation
-    if not prompts and not results:
-        raise ValueError("At least one of prompts or results must be non-empty")
+    if not prompt and not prompts and not results:
+        raise ValueError("At least one of prompt, prompts, or results must be non-empty")
 
     if prompts and results and len(prompts) != len(results):
         raise ValueError(f"Length mismatch: {len(prompts)} prompts vs {len(results)} results")
@@ -70,7 +80,7 @@ def evaluate(
             "raw": {
                 "comparison_matrix": [[None]],
                 "win_counts": {0: 1.0},
-                "metrics_used": metrics or {},
+                "metrics_used": metrics or [],
                 "auto_generated_metrics": False
             }
         }
@@ -80,15 +90,16 @@ def evaluate(
     if not metrics:
         if v:
             print("Auto-generating evaluation metrics...")
-        metrics = _generate_metrics(items, additional_information, prompts, results)
+        gen_prompts = [prompt] * len(items) if prompt else prompts
+        metrics = _generate_metrics(items, additional_information, gen_prompts, results, mode="pairwise")
         auto_generated = True
         if v:
-            print(f"Generated metrics: {list(metrics.keys())}")
+            print(f"Generated metrics: {metrics}")
 
     # Validate weights if provided
     if weights:
-        if set(weights.keys()) != set(metrics.keys()):
-            raise ValueError(f"Weight keys must match metric keys. Got {set(weights.keys())} vs {set(metrics.keys())}")
+        if set(weights.keys()) != set(metrics):
+            raise ValueError(f"Weight keys must match metric keys. Got {set(weights.keys())} vs {set(metrics)}")
 
     # Determine comparison pairs
     if n_items <= 5:
@@ -100,55 +111,82 @@ def evaluate(
     if v:
         print(f"Evaluating {n_items} items with {len(pairs)} comparisons across {len(metrics)} metrics")
 
-    # Run pairwise comparisons for each metric
+    # Initialize results structure for all metrics
     all_metric_results = {}
-
-    for metric_question, scale in metrics.items():
-        if v:
-            print(f"\nMetric: {metric_question}")
-
-        comparison_matrix = [[None] * n_items for _ in range(n_items)]
-        win_counts = {i: 0.0 for i in range(n_items)}
-
-        for idx, (i, j) in enumerate(pairs):
-            if v:
-                print(f"  Comparing {i} vs {j}... ", end="", flush=True)
-
-            winner = _compare_pair(
-                item_a=items[i],
-                item_b=items[j],
-                prompt_a=prompts[i] if prompts else None,
-                prompt_b=prompts[j] if prompts else None,
-                metric_question=metric_question,
-                scale=scale,
-                additional_information=additional_information,
-                position_swap=position_swap,
-                penalize_verbosity=penalize_verbosity
-            )
-
-            if v:
-                print(winner)
-
-            # Record result
-            if winner == "A":
-                comparison_matrix[i][j] = "A"
-                comparison_matrix[j][i] = "B"
-                win_counts[i] += 1.0
-            elif winner == "B":
-                comparison_matrix[i][j] = "B"
-                comparison_matrix[j][i] = "A"
-                win_counts[j] += 1.0
-            else:  # tie
-                comparison_matrix[i][j] = "tie"
-                comparison_matrix[j][i] = "tie"
-                win_counts[i] += 0.5
-                win_counts[j] += 0.5
-
+    for metric_question in metrics:
         all_metric_results[metric_question] = {
-            "comparison_matrix": comparison_matrix,
-            "win_counts": win_counts,
-            "scale": scale
+            "comparison_matrix": [[None] * n_items for _ in range(n_items)],
+            "win_counts": {i: 0.0 for i in range(n_items)},
         }
+
+    # Run pairwise comparisons concurrently
+    def _resolve_prompts(i, j):
+        if prompt:
+            return prompt, prompt
+        if prompts:
+            return prompts[i], prompts[j]
+        return None, None
+
+    def _run_pair(i, j):
+        pa, pb = _resolve_prompts(i, j)
+        if per_metric:
+            winners = {}
+            for metric_question in metrics:
+                winners[metric_question] = _compare_pair(
+                    item_a=items[i], item_b=items[j],
+                    prompt_a=pa, prompt_b=pb,
+                    metric_question=metric_question,
+                    additional_information=additional_information,
+                    position_swap=position_swap,
+                    penalize_verbosity=penalize_verbosity
+                )
+            return winners
+        return _compare_pair_multi_metric(
+            item_a=items[i], item_b=items[j],
+            prompt_a=pa, prompt_b=pb,
+            metrics=metrics,
+            additional_information=additional_information,
+            position_swap=position_swap,
+            penalize_verbosity=penalize_verbosity
+        )
+
+    if v:
+        print(f"Running comparisons with batch_size={batch_size}")
+
+    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        future_to_pair = {
+            executor.submit(_run_pair, i, j): (i, j)
+            for i, j in pairs
+        }
+        completed = 0
+        for future in as_completed(future_to_pair):
+            i, j = future_to_pair[future]
+            metric_winners = future.result()
+            completed += 1
+
+            if v:
+                print(f"\n[{completed}/{len(pairs)}] {i} vs {j}")
+
+            for metric_question, winner in metric_winners.items():
+                if v:
+                    print(f"  {metric_question[:60]}... {winner}")
+
+                comparison_matrix = all_metric_results[metric_question]["comparison_matrix"]
+                win_counts = all_metric_results[metric_question]["win_counts"]
+
+                if winner == "A":
+                    comparison_matrix[i][j] = "A"
+                    comparison_matrix[j][i] = "B"
+                    win_counts[i] += 1.0
+                elif winner == "B":
+                    comparison_matrix[i][j] = "B"
+                    comparison_matrix[j][i] = "A"
+                    win_counts[j] += 1.0
+                else:  # tie
+                    comparison_matrix[i][j] = "tie"
+                    comparison_matrix[j][i] = "tie"
+                    win_counts[i] += 0.5
+                    win_counts[j] += 0.5
 
     # Aggregate scores across metrics
     final_scores = _aggregate_metric_scores(all_metric_results, weights, n_items, len(pairs))
@@ -157,7 +195,7 @@ def evaluate(
     rankings = sorted(range(n_items), key=lambda i: final_scores[i], reverse=True)
 
     # Use first metric's comparison matrix for raw output
-    first_metric = list(metrics.keys())[0]
+    first_metric = metrics[0]
 
     return {
         "rankings": rankings,
@@ -178,6 +216,7 @@ def evaluate_single(
     additional_information='',
     metrics=None,
     penalize_verbosity=False,
+    per_metric=False,
     v=True
 ):
     """
@@ -191,6 +230,7 @@ def evaluate_single(
         additional_information: Domain context for evaluator.
         metrics: Dict of {"evaluation question": "scale"}. Empty = auto-generate.
         penalize_verbosity: Add conciseness instruction.
+        per_metric: If True, make one LLM call per metric (legacy). Default False batches all metrics.
         v: Verbose output.
 
     Returns:
@@ -211,27 +251,33 @@ def evaluate_single(
         if v:
             print(f"Generated metrics: {list(metrics.keys())}")
 
-    metric_scores = {}
-    scales = {}
-
-    for metric_question, scale in metrics.items():
+    if per_metric:
+        metric_scores = {}
+        for metric_question, scale in metrics.items():
+            if v:
+                print(f"Scoring: {metric_question}... ", end="", flush=True)
+            score = _score_single(
+                response=response, prompt=prompt,
+                metric_question=metric_question, scale=scale,
+                additional_information=additional_information,
+                penalize_verbosity=penalize_verbosity
+            )
+            if v:
+                print(score)
+            metric_scores[metric_question] = score
+    else:
         if v:
-            print(f"Scoring: {metric_question}... ", end="", flush=True)
-
-        score = _score_single(
-            response=response,
-            prompt=prompt,
-            metric_question=metric_question,
-            scale=scale,
+            print(f"Scoring all {len(metrics)} metrics in one call...")
+        metric_scores = _score_single_multi_metric(
+            response=response, prompt=prompt, metrics=metrics,
             additional_information=additional_information,
             penalize_verbosity=penalize_verbosity
         )
-
         if v:
-            print(score)
+            for question, score in metric_scores.items():
+                print(f"  {question[:60]}... {score}")
 
-        metric_scores[metric_question] = score
-        scales[metric_question] = scale
+    scales = {q: s for q, s in metrics.items()}
 
     # Normalize and average
     normalized_scores = []
@@ -253,8 +299,11 @@ def evaluate_single(
     }
 
 
-def _generate_metrics(items, additional_information, prompts, results):
-    """Auto-generate 3 evaluation metrics based on content."""
+def _generate_metrics(items, additional_information, prompts, results, mode="absolute"):
+    """Auto-generate 3 evaluation metrics based on content.
+
+    mode="pairwise" returns list[str], mode="absolute" returns dict.
+    """
     from .LLM import LLM
 
     # Sample items for context
@@ -267,9 +316,25 @@ def _generate_metrics(items, additional_information, prompts, results):
     elif prompts and results:
         context_type = "prompt-response pairs"
 
+    if mode == "pairwise":
+        result = LLM(model=1, v=False).sys(
+            "You suggest evaluation metrics for comparing LLM outputs. "
+            'Return exactly 3 metrics as JSON: {"metrics": ["How ...?", ...]}'
+        ).user(
+            f"Suggest 3 evaluation metrics for comparing these {context_type}:\n\n"
+            f"{sample_text}\n\n"
+            f"Additional context: {additional_information or 'General evaluation'}"
+        ).res_json()
+
+        return result.get("metrics", [
+            "How clear and well-structured is this?",
+            "How interesting and well-written is this?",
+            "How complete and thorough is this?"
+        ])
+
     result = LLM(model=1, v=False).sys(
         "You suggest evaluation metrics for comparing LLM outputs. "
-        "Return exactly 3 metrics as JSON: {\"metrics\": {\"How [question]?\": \"1-10\", ...}}"
+        'Return exactly 3 metrics as JSON: {"metrics": {"How [question]?": "1-10", ...}}'
     ).user(
         f"Suggest 3 evaluation metrics for comparing these {context_type}:\n\n"
         f"{sample_text}\n\n"
@@ -283,7 +348,7 @@ def _generate_metrics(items, additional_information, prompts, results):
     })
 
 
-def _compare_pair(item_a, item_b, prompt_a, prompt_b, metric_question, scale,
+def _compare_pair(item_a, item_b, prompt_a, prompt_b, metric_question,
                   additional_information, position_swap, penalize_verbosity):
     """Compare two items on a metric. Returns 'A', 'B', or 'tie'."""
     from .LLM import LLM
@@ -291,7 +356,10 @@ def _compare_pair(item_a, item_b, prompt_a, prompt_b, metric_question, scale,
     def do_comparison(first, second, first_prompt, second_prompt):
         prompt_context = ""
         if first_prompt and second_prompt:
-            prompt_context = f"\n## Prompt for Response A\n{first_prompt}\n\n## Prompt for Response B\n{second_prompt}\n"
+            if first_prompt == second_prompt:
+                prompt_context = f"\n## Original Prompt\n{first_prompt}\n"
+            else:
+                prompt_context = f"\n## Prompt for Response A\n{first_prompt}\n\n## Prompt for Response B\n{second_prompt}\n"
 
         verbosity_note = ""
         if penalize_verbosity:
@@ -310,7 +378,6 @@ def _compare_pair(item_a, item_b, prompt_a, prompt_b, metric_question, scale,
 {second}
 {prompt_context}
 Evaluate based on: {metric_question}
-Scale: {scale}
 {verbosity_note}
 Which response is better? Reply with JSON only:
 {{"winner": "A" or "B" or "tie", "reasoning": "brief explanation"}}"""
@@ -348,6 +415,91 @@ Which response is better? Reply with JSON only:
         return "tie"
 
 
+def _compare_pair_multi_metric(item_a, item_b, prompt_a, prompt_b, metrics,
+                               additional_information, position_swap, penalize_verbosity):
+    """Compare two items on all metrics in a single LLM call. Returns {metric_question: winner}."""
+    from .LLM import LLM
+
+    def build_prompt(first, second, first_prompt, second_prompt):
+        prompt_context = ""
+        if first_prompt and second_prompt:
+            if first_prompt == second_prompt:
+                prompt_context = f"\n## Original Prompt\n{first_prompt}\n"
+            else:
+                prompt_context = f"\n## Prompt for Response A\n{first_prompt}\n\n## Prompt for Response B\n{second_prompt}\n"
+
+        verbosity_note = ""
+        if penalize_verbosity:
+            verbosity_note = "\nNote: Reward conciseness. Longer responses are not necessarily better."
+
+        context_section = ""
+        if additional_information:
+            context_section = f"\n## Context\n{additional_information}\n"
+
+        metric_lines = "\n".join(
+            f"metric_{idx}: {q}"
+            for idx, q in enumerate(metrics, 1)
+        )
+
+        example_keys = ", ".join(
+            f'"metric_{idx}": {{"winner": "A" or "B" or "tie", "reasoning": "brief"}}'
+            for idx in range(1, len(metrics) + 1)
+        )
+
+        return f"""You are an expert evaluator. Compare the following two responses.
+{context_section}
+## Response A
+{first}
+
+## Response B
+{second}
+{prompt_context}
+Evaluate on each of the following metrics:
+{metric_lines}
+{verbosity_note}
+For EACH metric, determine which response is better. You MUST use the exact keys metric_1, metric_2, etc. Reply with JSON only:
+{{{example_keys}}}"""
+
+    def do_comparison(first, second, first_prompt, second_prompt):
+        eval_prompt = build_prompt(first, second, first_prompt, second_prompt)
+        return LLM(model=1, v=False).user(eval_prompt).res_json()
+
+    def extract_winners(result, warn_label=""):
+        winners = {}
+        for idx, question in enumerate(metrics, 1):
+            key = f"metric_{idx}"
+            if key not in result:
+                print(f"Warning: {key} missing from {warn_label}LLM response, defaulting to tie")
+                winners[question] = "tie"
+                continue
+            entry = result[key]
+            winner = entry.get("winner", "tie").upper() if isinstance(entry, dict) else "tie"
+            winners[question] = winner if winner in ("A", "B") else "tie"
+        return winners
+
+    result1 = do_comparison(item_a, item_b, prompt_a, prompt_b)
+    winners1 = extract_winners(result1)
+
+    if not position_swap:
+        return winners1
+
+    result2 = do_comparison(item_b, item_a, prompt_b, prompt_a)
+    winners2 = extract_winners(result2, "swapped ")
+
+    # Reconcile per metric
+    final = {}
+    for question in metrics:
+        r1 = winners1[question]
+        r2 = winners2[question]
+        # Translate r2 back (positions were swapped)
+        r2_translated = {"A": "B", "B": "A"}.get(r2, "tie")
+        if r1 == r2_translated:
+            final[question] = r1 if r1 in ("A", "B") else "tie"
+        else:
+            final[question] = "tie"
+    return final
+
+
 def _score_single(response, prompt, metric_question, scale, additional_information, penalize_verbosity):
     """Score a single response on a metric. Returns raw score."""
     from .LLM import LLM
@@ -383,6 +535,66 @@ Reply with JSON only:
 
     # Clamp to scale
     return max(min_val, min(max_val, float(score)))
+
+
+def _score_single_multi_metric(response, prompt, metrics, additional_information, penalize_verbosity):
+    """Score a single response on all metrics in a single LLM call. Returns {metric_question: score}."""
+    from .LLM import LLM
+
+    metric_keys = list(metrics.keys())
+
+    prompt_context = ""
+    if prompt:
+        prompt_context = f"\n## Original Prompt\n{prompt}\n"
+
+    verbosity_note = ""
+    if penalize_verbosity:
+        verbosity_note = "\nNote: Reward conciseness. Longer responses are not necessarily better."
+
+    context_section = ""
+    if additional_information:
+        context_section = f"\n## Context\n{additional_information}\n"
+
+    metric_lines = "\n".join(
+        f"metric_{idx}: {q} (Scale: {metrics[q]})"
+        for idx, q in enumerate(metric_keys, 1)
+    )
+
+    example_keys = ", ".join(
+        f'"metric_{idx}": {{"score": <number>, "reasoning": "brief"}}'
+        for idx in range(1, len(metric_keys) + 1)
+    )
+
+    eval_prompt = f"""You are an expert evaluator. Score the following response.
+{context_section}
+## Response
+{response}
+{prompt_context}
+Evaluate on each of the following metrics:
+{metric_lines}
+{verbosity_note}
+For EACH metric, provide a score. You MUST use the exact keys metric_1, metric_2, etc. Reply with JSON only:
+{{{example_keys}}}"""
+
+    result = LLM(model=1, v=False).user(eval_prompt).res_json()
+
+    scores = {}
+    for idx, question in enumerate(metric_keys, 1):
+        key = f"metric_{idx}"
+        scale = metrics[question]
+        min_val, max_val = _parse_scale(scale)
+        midpoint = (min_val + max_val) / 2
+
+        if key not in result:
+            print(f"Warning: {key} missing from LLM response, defaulting to midpoint ({midpoint})")
+            scores[question] = midpoint
+        elif isinstance(result[key], dict):
+            raw = result[key].get("score", midpoint)
+            scores[question] = max(min_val, min(max_val, float(raw)))
+        else:
+            scores[question] = midpoint
+
+    return scores
 
 
 def _parse_scale(scale_str):

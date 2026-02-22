@@ -1,0 +1,33 @@
+{
+  "model": "claude-opus-4-6",
+  "temperature": null,
+  "stream": false,
+  "max_tokens": null,
+  "v": false,
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "search_enabled": false,
+  "search_context_size": "medium",
+  "reasoning_enabled": true,
+  "reasoning_effort": "high",
+  "schemas": null,
+  "chat_msgs": [
+    {
+      "role": "system",
+      "content": "You are an expert prompt engineer. Given a prompt, you return an improved version that will elicit a better, more accurate, and more useful response from an LLM.\n\nYour improvements may include:\n- Adding clarity and specificity\n- Adding useful framing or context\n- Removing ambiguity\n- Structuring the request more effectively\n- Adding relevant constraints or guidelines where helpful\n\nKeep the original intent fully intact. Don't over-engineer simple prompts \u2014 only improve where it meaningfully helps.\n\nReturn JSON with a single key:\n- \"output_prompt\": the improved prompt as a string"
+    },
+    {
+      "role": "user",
+      "content": "{prompt}"
+    }
+  ],
+  "prompt_queue": [],
+  "prompt_queue_remaining": 0,
+  "reasoning_contents": [],
+  "search_annotations": [],
+  "costs": [],
+  "auto_compact": 30,
+  "max_retries": 2,
+  "generated_from": "create a improving LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except improved to get a better response.",
+  "generation_summary": "Prompt improver LLM configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" containing the improved version. Uses high reasoning to thoughtfully analyze and enhance prompts while preserving original intent."
+}

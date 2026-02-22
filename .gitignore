@@ -37,6 +37,7 @@ test_*.ipynb
 
 # Personal
 to_do.md
+test_md/
 
 # Claude Code
 CLAUDE.md

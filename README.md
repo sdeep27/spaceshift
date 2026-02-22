@@ -144,22 +144,22 @@ text = LLM().transcribe("recording.wav")
 Rank multiple LLM outputs with pairwise comparison, or score a single response:
 
 ```python
-from cruise_llm import evaluate
+from cruise_llm import pairwise_evaluate
 
 # Compare outputs from different models
 outputs = [model.run(text=article) for model in models]
-result = evaluate(results=outputs)
+result = pairwise_evaluate(results=outputs)
 print(result["rankings"])  # [2, 0, 1] = third output was best
 print(result["scores"])    # {0: 0.35, 1: 0.15, 2: 0.50}
 
 # Custom metrics
-result = evaluate(
+result = pairwise_evaluate(
     results=outputs,
-    metrics={"How interesting is it?": "1-10", "How easy to understand?": "1-10"},
+    metrics=["How interesting is it?", "How easy to understand?"],
     weights={"How interesting is it?": 0.3, "How easy to understand?": 0.7}
 )
 
-# Score a single response
+# Score a single response (absolute scoring with scales)
 llm = LLM().user("Explain quantum computing").chat()
 score = llm.evaluate_last(metrics={"How clear?": "1-10"})
 print(score["score"])  # 0.82

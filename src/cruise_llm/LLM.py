@@ -1133,7 +1133,7 @@ class LLM:
             "by_model": by_model,
         }
 
-    def evaluate_last(self, include_prompt=False, additional_information='', metrics=None, penalize_verbosity=False, v=True) -> dict:
+    def evaluate_last(self, include_prompt=False, additional_information='', metrics=None, penalize_verbosity=False, per_metric=False, v=True) -> dict:
         """
         Evaluate the last assistant response using absolute scoring.
 
@@ -1144,6 +1144,7 @@ class LLM:
             additional_information: Domain context for the evaluator.
             metrics: Dict of {"evaluation question": "scale"}. Empty = auto-generate 3 metrics.
             penalize_verbosity: If True, add "reward conciseness" to evaluation.
+            per_metric: If True, make one LLM call per metric (legacy). Default False batches all metrics.
             v: Verbose output.
 
         Returns:
@@ -1180,6 +1181,7 @@ class LLM:
             additional_information=additional_information,
             metrics=metrics,
             penalize_verbosity=penalize_verbosity,
+            per_metric=per_metric,
             v=v
         )
 

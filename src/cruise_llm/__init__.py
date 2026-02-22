@@ -1,4 +1,4 @@
 from .LLM import LLM
-from .evaluate import evaluate
+from .evaluate import pairwise_evaluate
 
-__all__ = ["LLM", "evaluate"]
+__all__ = ["LLM", "pairwise_evaluate"]
