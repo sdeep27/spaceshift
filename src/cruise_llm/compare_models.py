@@ -193,21 +193,27 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
     eval_kwargs.setdefault('v', v)
     evaluation = pairwise_evaluate(prompt=prompt, results=results, metrics=metrics, **eval_kwargs)
 
+    rankings = evaluation['rankings']
+    best_idx = rankings[0]
+
     configs = {
         model_labels[i]: {
             "model_shorthand": models[i],
             "model_resolved": resolved[i],
             "reasoning_effort": efforts[i],
-            "rank": evaluation['rankings'].index(i) + 1,
+            "rank": rankings.index(i) + 1,
             "score": evaluation['scores'][i]
         }
         for i in range(len(models))
     }
 
     return {
-        "rankings": [model_labels[i] for i in evaluation['rankings']],
+        "top_output": results[best_idx],
+        "top_model": model_labels[best_idx],
+        "rankings": [model_labels[i] for i in rankings],
         "responses": results,
         "models": model_labels,
+        "scores": evaluation['scores'],
         "configs": configs,
         "evaluation": evaluation,
     }
