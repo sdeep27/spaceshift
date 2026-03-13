@@ -55,6 +55,17 @@ _AUDIO_INPUT_OVERRIDES = {
     "gemini/gemini-2.5-flash-lite",
 }
 
+_WEB_SEARCH_OVERRIDES = {
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+    "claude-4-sonnet-20250514",
+    "claude-4-opus-20250514",
+    "gemini/gemini-3.1-pro-preview",
+}
+
 class LLM:
     """
     A chainable, stateful wrapper around LiteLLM for building composable agents and workflows.
@@ -1460,6 +1471,8 @@ class LLM:
             pass
     
     def _has_search(self, model):
+        if model in _WEB_SEARCH_OVERRIDES:
+            return True
         return litellm.supports_web_search(model=model) == True
 
     def _has_reasoning(self, model):
@@ -1542,7 +1555,7 @@ class LLM:
 
     def models_with_search(self, model_str=None):
         possible_models = self.get_models(model_str)
-        return [model for model in possible_models if litellm.supports_web_search(model=model) == True]
+        return [model for model in possible_models if model in _WEB_SEARCH_OVERRIDES or litellm.supports_web_search(model=model) == True]
 
     def models_with_reasoning(self, model_str=None):
         possible_models = self.get_models(model_str)

@@ -1,7 +1,8 @@
 from .LLM import LLM
 from .evaluate import pairwise_evaluate
 from .subprompt import subprompt
-from .prompt_search import prompt_search, language_transform
+from .prompt_probe import prompt_probe, language_transform
+from .compare_models import compare_models
 
 
 def to_md(text, path=None, labels=None):
@@ -35,4 +36,4 @@ def to_md(text, path=None, labels=None):
     return paths
 
 
-__all__ = ["LLM", "pairwise_evaluate", "subprompt", "prompt_search", "language_transform", "to_md"]
+__all__ = ["LLM", "pairwise_evaluate", "subprompt", "prompt_probe", "language_transform", "compare_models", "to_md"]

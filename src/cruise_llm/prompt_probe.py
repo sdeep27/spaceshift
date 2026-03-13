@@ -124,9 +124,9 @@ def language_transform(prompt, language, output_language='english', translator_m
     }
 
 
-def prompt_search(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, evaluate=True, concurrency=5, v=True):
+def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, evaluate=True, concurrency=5, v=True):
     """
-    Search for the best prompt variant by transforming, generating responses, and evaluating.
+    Probe for the best prompt variant by transforming, generating responses, and evaluating.
 
     Applies prompt transforms (LLM-based, deterministic, or translation), generates responses
     for each variant, then uses pairwise evaluation to rank them.
