@@ -784,10 +784,8 @@ class LLM:
 
     get_models_category = get_models_for_category
 
-    def _run_xai_search(self, args, jsn_mode=False):
-        """Handle xAI search using the Responses API (Agent Tools API).
-        xAI deprecated Live Search Dec 2025 - web_search tool only works via Responses API.
-        """
+    def _run_responses_search(self, args, jsn_mode=False):
+        """Handle search via the Responses API (OpenAI, xAI, and other providers that don't support web_search_options in chat completions)."""
         # Convert chat messages to Responses API input format
         input_messages = []
         for msg in self.chat_msgs:
@@ -834,7 +832,7 @@ class LLM:
             prompt_queue_index = len(self.prompt_queue) - self.prompt_queue_remaining
             self.user(self.prompt_queue[prompt_queue_index])
             self.prompt_queue_remaining -= 1
-            self._run_xai_search(args, jsn_mode)
+            self._run_responses_search(args, jsn_mode)
 
     def _track_cost_responses(self, resp, model):
         """Track costs from Responses API format."""
@@ -860,9 +858,9 @@ class LLM:
         args['model'] = self._check_model(args['model'])
         model_lower = args['model'].lower()
 
-        # xAI with search requires Responses API (Agent Tools API)
-        if self.search_enabled and model_lower.startswith('xai/'):
-            return self._run_xai_search(args, jsn_mode)
+        # OpenAI and xAI search requires Responses API
+        if self.search_enabled and not model_lower.startswith(('gemini/', 'together_ai/', 'claude')):
+            return self._run_responses_search(args, jsn_mode)
 
         chat_args = {
             "model": args['model'],

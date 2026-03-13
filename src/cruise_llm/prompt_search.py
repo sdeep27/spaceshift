@@ -124,7 +124,7 @@ def language_transform(prompt, language, output_language='english', translator_m
     }
 
 
-def prompt_search(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, concurrency=5, v=True):
+def prompt_search(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, evaluate=True, concurrency=5, v=True):
     """
     Search for the best prompt variant by transforming, generating responses, and evaluating.
 
@@ -138,6 +138,7 @@ def prompt_search(prompt, transforms=None, n=6, output_model=1, prompt_model=Non
         output_model: Model for generating final responses (passed to LLM(model=...)).
         prompt_model: Model override for LLM-based prompt transforms. None = use transform's saved config.
         metrics: Passed to pairwise_evaluate. None = auto-generate.
+        evaluate: If False, skip pairwise evaluation and return responses only.
         concurrency: Max parallel threads for transform + generation phases.
         v: Verbose output.
 
@@ -192,6 +193,13 @@ def prompt_search(prompt, transforms=None, n=6, output_model=1, prompt_model=Non
             if v:
                 print(f"  Translating response {i} back to english...")
             all_responses[i] = postprocess_fn(response)
+
+    if not evaluate:
+        return {
+            "transforms": all_transforms,
+            "prompts": all_prompts,
+            "responses": all_responses,
+        }
 
     # Phase 4: Evaluate
     if v:

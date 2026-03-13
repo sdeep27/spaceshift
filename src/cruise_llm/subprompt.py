@@ -1,7 +1,7 @@
 from .LLM import LLM
 
 
-def subprompt(prompt, n=[5], model=1, search=False, concurrency=5):
+def subprompt(prompt, n=[5], model=1, search=False, concurrency=5, v=True):
     """
     Recursively decompose a prompt into smaller subprompts across multiple levels.
 
@@ -46,9 +46,10 @@ def subprompt(prompt, n=[5], model=1, search=False, concurrency=5):
 
         llm = LLM(model=model, search=search, v=False).sys(system_prompt).user(user_msg)
 
-        print(f"[Level {depth}] Splitting {len(current)} prompt(s):")
-        for i, entry in enumerate(current):
-            print(f"  [{depth}:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
+        if v:
+            print(f"[Level {depth}] Splitting {len(current)} prompt(s):")
+            for i, entry in enumerate(current):
+                print(f"  [{depth}:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
 
         inputs = [{"prompt": entry["prompt"]} for entry in current]
         results = llm.run_batch(inputs, concurrency=concurrency)
@@ -59,5 +60,10 @@ def subprompt(prompt, n=[5], model=1, search=False, concurrency=5):
                 next_level.append({"prompt": sp, "depth": depth, "parent": parent_entry["prompt"]})
 
         current = next_level
+
+    if v:
+        print(f"[Result] {len(current)} final prompt(s):")
+        for i, entry in enumerate(current):
+            print(f"  [R:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
 
     return current
