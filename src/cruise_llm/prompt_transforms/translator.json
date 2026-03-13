@@ -1,0 +1,184 @@
+{
+  "model": "gemini/gemini-3-flash-preview",
+  "temperature": null,
+  "stream": false,
+  "max_tokens": null,
+  "v": false,
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "search_enabled": false,
+  "search_context_size": "medium",
+  "reasoning_enabled": true,
+  "reasoning_effort": "default",
+  "schemas": null,
+  "chat_msgs": [
+    {
+      "role": "system",
+      "content": "You are an expert translator fluent in all languages. Translate the provided text into the specified target language. Preserve the original meaning, tone, and nuance as closely as possible.\n\nReturn JSON with a single key:\n- \"output\": the translated text"
+    },
+    {
+      "role": "user",
+      "content": "Translate the following text into {language}:\n\n{text}"
+    }
+  ],
+  "prompt_queue": [],
+  "prompt_queue_remaining": 0,
+  "reasoning_contents": [],
+  "search_annotations": [],
+  "costs": [
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 84,
+      "output_tokens": 44,
+      "total_cost": 0.00152
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 84,
+      "output_tokens": 33,
+      "total_cost": 0.001245
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 1729,
+      "output_tokens": 1499,
+      "total_cost": 0.04612
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 82,
+      "output_tokens": 46,
+      "total_cost": 0.00156
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 1729,
+      "output_tokens": 1490,
+      "total_cost": 0.045895
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 1202,
+      "output_tokens": 878,
+      "total_cost": 0.027960000000000002
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 82,
+      "output_tokens": 47,
+      "total_cost": 0.001585
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 2049,
+      "output_tokens": 1408,
+      "total_cost": 0.045445
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 82,
+      "output_tokens": 43,
+      "total_cost": 0.001485
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 1034,
+      "output_tokens": 625,
+      "total_cost": 0.020795
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 82,
+      "output_tokens": 31,
+      "total_cost": 0.001185
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 903,
+      "output_tokens": 670,
+      "total_cost": 0.021265000000000003
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 83,
+      "output_tokens": 74,
+      "total_cost": 0.002265
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 2219,
+      "output_tokens": 894,
+      "total_cost": 0.033445
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 82,
+      "output_tokens": 59,
+      "total_cost": 0.001885
+    },
+    {
+      "model": "claude-opus-4-6",
+      "input_tokens": 3053,
+      "output_tokens": 1542,
+      "total_cost": 0.053815
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 70,
+      "output_tokens": 26,
+      "total_cost": 0.000113
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 70,
+      "output_tokens": 23,
+      "total_cost": 0.000104
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 1402,
+      "output_tokens": 1246,
+      "total_cost": 0.004439
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 70,
+      "output_tokens": 23,
+      "total_cost": 0.000104
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 1402,
+      "output_tokens": 1255,
+      "total_cost": 0.004466
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 64,
+      "output_tokens": 19,
+      "total_cost": 8.9e-05
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 878,
+      "output_tokens": 772,
+      "total_cost": 0.002755
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 64,
+      "output_tokens": 17,
+      "total_cost": 8.3e-05
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "input_tokens": 473,
+      "output_tokens": 418,
+      "total_cost": 0.0014905
+    }
+  ],
+  "auto_compact": 30,
+  "max_retries": 2,
+  "generated_from": "create a translator LLM that takes two arguments, text and language, then returns json with one key called output that is the text in the language",
+  "generation_summary": "Translator LLM configured with two required inputs ({text}, {language}) that returns JSON with a single \"output\" key containing the translated text."
+}
