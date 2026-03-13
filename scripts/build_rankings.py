@@ -274,21 +274,29 @@ def apply_reasoning_config(rankings, reasoning_config):
 
 # --- Optimal computation ---
 
+SPEED_PENALTIES = {
+    'together_ai/': 0.25,
+}
+
 def compute_optimal(best_list, fast_list, fast_weight=0.5, best_weight=0.5):
-    """50/50 weighted rank blend of best + fast positions."""
+    """50/50 weighted rank blend of best + fast positions, with provider speed penalties."""
     best_models = [e['model'] for e in best_list]
     fast_models = [e['model'] for e in fast_list]
     all_models = set(best_models) | set(fast_models)
 
     best_rank = {m: i for i, m in enumerate(best_models)}
     fast_rank = {m: i for i, m in enumerate(fast_models)}
+    n_fast = len(fast_models)
 
     scores = []
     for m in all_models:
         if 'codex' in m.lower():
             continue
         b = best_rank.get(m, len(best_models))
-        f = fast_rank.get(m, len(fast_models))
+        f = fast_rank.get(m, n_fast)
+        penalty = sum(v for prefix, v in SPEED_PENALTIES.items() if m.startswith(prefix))
+        if penalty:
+            f = f + penalty * n_fast
         scores.append((m, fast_weight * f + best_weight * b))
 
     scores.sort(key=lambda x: x[1])
@@ -304,6 +312,7 @@ OPEN_SOURCE_PATTERNS = [
     'solar', 'internlm', 'codellama', 'starcoder', 'codestral',
     'devstral', 'mixtral', 'mathstral', 'ministral', 'gpt-oss',
     'nemotron', 'granite', 'olmo', 'command-r',
+    'glm', 'cogito', 'apriel', 'lfm',
 ]
 
 CLOSED_PATTERNS = [
@@ -502,6 +511,25 @@ def main():
     available_set = set(available_models)
     print(f"  litellm has {len(available_models)} available models")
 
+    # Augment with Together.AI models (litellm's static list is outdated)
+    together_key = os.getenv("TOGETHERAI_API_KEY")
+    if together_key:
+        try:
+            resp = requests.get("https://api.together.xyz/v1/models",
+                              headers={"Authorization": f"Bearer {together_key}"})
+            resp.raise_for_status()
+            together_models = resp.json()
+            excluded_types = {"image", "embedding", "moderation", "code", "audio"}
+            if isinstance(together_models, list):
+                chat_ids = [m["id"] for m in together_models if m.get("type") not in excluded_types]
+            else:
+                chat_ids = [m["id"] for m in together_models.get("data", []) if m.get("type") not in excluded_types]
+            prefixed = [f"together_ai/{mid}" for mid in chat_ids]
+            available_set.update(prefixed)
+            print(f"  + {len(prefixed)} Together.AI chat models added")
+        except Exception as e:
+            print(f"  WARNING: Failed to fetch Together.AI models: {e}")
+
     # --- Map to litellm ---
     print("\nMapping AA slugs to litellm model names...")
 
@@ -551,7 +579,7 @@ def main():
 
     # --- Validate against litellm ---
     print("\nValidating mapped models against litellm...")
-    rankings, invalid = validate_models(rankings, available_models)
+    rankings, invalid = validate_models(rankings, available_set)
     if invalid:
         print(f"\n  INVALID models (not in litellm, removed from rankings):")
         for cat, model in invalid:

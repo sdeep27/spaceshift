@@ -13,7 +13,7 @@ import rapidfuzz
 import random
 from pathlib import Path
 
-_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2026-02-06.json"
+_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2026-03-13.json"
 with open(_RANKINGS_PATH, "r") as f:
     _raw_rankings = json.load(f)
 
@@ -692,7 +692,7 @@ class LLM:
             category, entry = zipped[rank - 1]
             model_name = _get_model_name(entry)
             effort = _get_reasoning_effort(entry)
-            if effort and not getattr(self, 'reasoning_effort', None):
+            if effort and effort != 'default' and not getattr(self, 'reasoning_effort', None):
                 self.reasoning_effort = effort
                 self.reasoning_enabled = True
             return model_name
@@ -711,7 +711,7 @@ class LLM:
                     entry = entries[rank_index]
                     model_name = _get_model_name(entry)
                     effort = _get_reasoning_effort(entry)
-                    if effort and not getattr(self, 'reasoning_effort', None):
+                    if effort and effort != 'default' and not getattr(self, 'reasoning_effort', None):
                         self.reasoning_effort = effort
                         self.reasoning_enabled = True
                     return model_name
@@ -728,7 +728,7 @@ class LLM:
             for entry in model_rankings.get(category_str.lower(), []):
                 if _get_model_name(entry) == selected:
                     effort = _get_reasoning_effort(entry)
-                    if effort and not getattr(self, 'reasoning_effort', None):
+                    if effort and effort != 'default' and not getattr(self, 'reasoning_effort', None):
                         self.reasoning_effort = effort
                         self.reasoning_enabled = True
                     break

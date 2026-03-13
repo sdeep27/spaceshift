@@ -33,5 +33,16 @@
   "gemini/gemini-3.1-pro-preview": "high",
   "gemini/gemini-3.1-flash-lite-preview": "default",
   "gpt-5.4": "xhigh",
-  "gpt-5.3-codex": "xhigh"
+  "gpt-5.3-codex": "xhigh",
+  "together_ai/deepseek-ai/DeepSeek-R1": "default",
+  "together_ai/deepseek-ai/DeepSeek-V3.1": "default",
+  "together_ai/Qwen/Qwen3.5-397B-A17B": "default",
+  "together_ai/Qwen/Qwen3.5-9B": "default",
+  "together_ai/Qwen/Qwen3-235B-A22B-Thinking-2507": "default",
+  "together_ai/moonshotai/Kimi-K2.5": "default",
+  "together_ai/moonshotai/Kimi-K2-Thinking": "default",
+  "together_ai/zai-org/GLM-4.6": "default",
+  "together_ai/zai-org/GLM-4.7": "default",
+  "together_ai/zai-org/GLM-5": "default",
+  "together_ai/MiniMaxAI/MiniMax-M2.5": "default"
 }
