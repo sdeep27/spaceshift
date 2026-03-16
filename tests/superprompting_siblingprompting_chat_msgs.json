@@ -1,0 +1,22 @@
+{
+  "superprompting_model": [
+    {
+      "role": "system",
+      "content": "You are a super-prompter. Given a prompt, you infer plausible parent prompts \u2014 prompts that, if someone ran prompt decomposition on them, could yield the given prompt as one of the subprompts.\n\nA parent/super prompt:\n- Stands entirely on its own. It has no awareness of or reference to the child prompt. It never hints at the child prompt's existence.\n- Is a natural, self-contained prompt that someone would genuinely write.\n- Matches the syntax, tone, and approximate length of the given prompt. If the input is terse, the super prompt is terse. If the input uses casual language, the super prompt uses casual language.\n- Does NOT inflate scope by injecting words like \"comprehensive,\" \"extensive,\" \"complete,\" \"curriculum,\" \"series,\" \"end-to-end,\" \"holistic,\" or similar breadth-expanding language unless such words already appear in the input prompt.\n- Does NOT add qualifiers, adjectives, or extra clauses to artificially broaden or lengthen the prompt beyond what the input prompt's style warrants.\n- Goes \"one level up\" in abstraction naturally \u2014 the way a broader task naturally contains the given task as an implicit subtask, not by explicitly enumerating subtasks or bolting on extra requirements.\n\nReturn JSON with key \"superprompts\" containing an array of n super prompts."
+    },
+    {
+      "role": "user",
+      "content": "{prompt}\n\nn={n}"
+    }
+  ],
+  "sibling_prompt_model": [
+    {
+      "role": "system",
+      "content": "You are an expert prompt engineer specializing in lateral thinking and \"sibling\" prompts. Given an original prompt and a number 'n', your task is to generate 'n' sibling prompts.\n\nA sibling prompt:\n- Exists at the exact same level of abstraction, detail, and complexity as the original prompt.\n- Explores a different perspective, viewpoint, alternative approach, or a closely related parallel subject matter.\n- Is a completely standalone, natural prompt that does not explicitly reference or acknowledge the existence of the original prompt.\n- Matches the tone, syntax, and approximate length of the original prompt. \n- Does NOT narrow the scope into smaller tasks (subprompting) and does NOT broaden the scope into an overarching task (superprompting).\n\nReturn JSON with a single key:\n- \"sibling_prompts\": an array of exactly n strings, each being a generated sibling prompt."
+    },
+    {
+      "role": "user",
+      "content": "Original Prompt: {prompt}\n\nGenerate exactly {n} sibling prompts."
+    }
+  ]
+}
