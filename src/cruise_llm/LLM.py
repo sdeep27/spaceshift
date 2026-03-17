@@ -39,6 +39,51 @@ def _get_reasoning_effort(entry):
         return entry.get("reasoning_effort")
     return None
 
+def resolve_model(shorthand):
+    """Resolve a shorthand (e.g. 'best1', 'open3', '1') to its full litellm model string.
+
+    Returns the model string if shorthand is a valid category/rank, or raises
+    ValueError with fuzzy suggestions if no match is found.
+    """
+    import re
+    shorthand = str(shorthand)
+    valid_categories = ['best', 'cheap', 'fast', 'open', 'optimal', 'codex', 'reasoning', 'search']
+
+    if shorthand.isdigit():
+        rank = int(shorthand)
+        if rank < 1:
+            raise ValueError(f"Model rank must be >= 1, got {rank}")
+        optimal_entries = model_rankings.get('optimal', [])
+        best_entries = model_rankings.get('best', [])
+        zipped = []
+        for i in range(max(len(optimal_entries), len(best_entries))):
+            if i < len(best_entries):
+                zipped.append(best_entries[i])
+            if i < len(optimal_entries):
+                zipped.append(optimal_entries[i])
+        if rank > len(zipped):
+            raise ValueError(f"Rank {rank} not available (max: {len(zipped)})")
+        return _get_model_name(zipped[rank - 1])
+
+    match = re.match(r'^([a-z]+)(\d+)$', shorthand.lower())
+    if match:
+        base_category, rank = match.group(1), int(match.group(2))
+        if base_category in valid_categories:
+            entries = model_rankings.get(base_category, [])
+            if rank < 1 or rank - 1 >= len(entries):
+                raise ValueError(f"Rank {rank} not available for {base_category} (max: {len(entries)})")
+            return _get_model_name(entries[rank - 1])
+
+    if shorthand.lower() in valid_categories:
+        entries = model_rankings.get(shorthand.lower(), [])
+        if entries:
+            return _get_model_name(entries[0])
+
+    all_models = list({_get_model_name(e) for cat in model_rankings.values() for e in cat})
+    suggestions = rapidfuzz.process.extract(shorthand, all_models, scorer=rapidfuzz.fuzz.WRatio, limit=3)
+    suggestion_strs = [f"  {name} (score: {score:.0f})" for name, score, _ in suggestions]
+    raise ValueError(f"'{shorthand}' is not a valid shorthand.\nDid you mean:\n" + "\n".join(suggestion_strs))
+
 load_dotenv()
 litellm.drop_params = True
 

@@ -335,13 +335,13 @@ def _generate_metrics(items, additional_information, prompts, results, mode="abs
     if mode == "pairwise":
         result = LLM(model=1, v=False).sys(
             "You suggest evaluation metrics for comparing LLM outputs. "
-            "Metrics should be broad and general-purpose — relevant to the subject matter "
-            "but not tailored to any specific response. "
+            "Metrics should be broad and general-purpose — relevant to the subject matter, but broad enough metrics to be applicable even to a different, yet related, subject."
+            "It should not be too specific."
             'Return exactly 3 metrics as JSON: {"metrics": ["How ...?", ...]}'
         ).user(
-            f"Suggest 3 broad evaluation metrics for responses to this prompt:\n\n"
+            f"Here is the prompt, return 3 evaluation metrics:\n\n"
             f"{prompt_text}\n\n"
-            f"Additional context: {additional_information or 'General evaluation'}"
+            f"{'Additional context: ' + additional_information if additional_information else ''}"
         ).res_json()
 
         return result.get("metrics", list(_DEFAULT_METRICS_PAIRWISE))

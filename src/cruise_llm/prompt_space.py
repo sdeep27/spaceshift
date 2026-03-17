@@ -32,11 +32,10 @@ def subprompt(prompt, n=[5], model=1, search=False, concurrency=5, v=True):
     for depth, num_splits in enumerate(n):
         system_prompt = (
             f"You are a prompt decomposition expert. Given a prompt, break it down into "
-            f"exactly {num_splits} smaller, focused subprompts that collectively cover the "
-            f"full scope of the original prompt.\n\n"
-            f"Each subprompt should be self-contained (you do not need to know the prompt "
-            f"it derived from to answer it properly), actionable, and when all subprompts "
-            f"are addressed together, they should fully satisfy the original prompt.\n\n"
+            f"exactly {num_splits} smaller subprompts that together decompose the "
+            f"scope of the original prompt.\n\n"
+            f"Each subprompt is on its own, with no awareness of or reference to the original prompt."
+            f"Each subprompt should match the syntax, tone, and approximate length of the original prompt.\n\n"
             f'Return JSON with key:\n- "subprompts": an array of exactly {num_splits} strings, '
             f"each being a subprompt"
         )
@@ -241,7 +240,7 @@ def _run_expansion(prompt, n, direction, model, concurrency, v):
             llm = LLM(model=model, v=False).sys(sys_prompt).user("Prompt = {prompt}")
             inputs = [{"prompt": e["prompt"]} for e in current]
             output_key = "subprompts"
-        elif direction == "sup":
+        elif direction == "super":
             llm = LLM(model=model, v=False).sys(_SUPERPROMPT_SYSTEM).user("{prompt}\n\nn={n}")
             inputs = [{"prompt": e["prompt"], "n": num_splits} for e in current]
             output_key = "superprompts"
@@ -253,7 +252,10 @@ def _run_expansion(prompt, n, direction, model, concurrency, v):
             output_key = "sibling_prompts"
 
         if v:
-            print(f"  [{direction} L{depth}] Expanding {len(current)} prompt(s) x {num_splits}")
+            print(f"  [{direction} L{depth}] Expanding {len(current)} prompt(s) x {num_splits}:")
+            for i, e in enumerate(current):
+                p = e["prompt"]
+                print(f"    [{depth}:{i}] {p[:90]}{'...' if len(p) > 90 else ''}")
 
         results = llm.run_batch(inputs, concurrency=concurrency)
 
@@ -268,6 +270,10 @@ def _run_expansion(prompt, n, direction, model, concurrency, v):
                 all_edges.append((parent_entry["id"], node_id))
 
         current = next_level
+
+        if v:
+            for i, nd in enumerate(current):
+                print(f"    -> {nd['prompt'][:90]}{'...' if len(nd['prompt']) > 90 else ''}")
 
     final = [{"prompt": nd["prompt"], "depth": nd["depth"], "parent": nd.get("parent", prompt)} for nd in current]
     return final, all_nodes, all_edges
@@ -292,38 +298,68 @@ def _wrap_label(text, width=40, max_lines=3):
     return "\n".join(lines)
 
 
-_DIRECTION_COLORS = {"sub": "#3498DB", "sup": "#E74C3C", "side": "#27AE60"}
+_DIRECTION_COLORS = {"sub": "#3498DB", "super": "#E74C3C", "side": "#27AE60"}
 
 
 def _build_graph(root_prompt, all_nodes, all_edges):
-    """Build a graphviz Digraph from collected nodes and edges."""
+    """Build a graphviz Digraph from collected nodes and edges.
+
+    Layout: super levels stack above root, side and sub levels stack below.
+    Deeper levels within each direction go further from root.
+    """
     try:
         import graphviz
     except ImportError:
         raise ImportError("graphviz required for visualization: pip install graphviz")
 
     dot = graphviz.Digraph(comment='Prompt Tree', format='svg')
-    dot.attr(rankdir='TB', fontname='Helvetica', bgcolor='#FAFAFA')
+    dot.attr(rankdir='TB', fontname='Helvetica', bgcolor='#FAFAFA', newrank='true')
     dot.attr('node', fontname='Helvetica', fontsize='10', shape='box', style='rounded,filled')
     dot.attr('edge', arrowsize='0.7')
 
     dot.node("root", _wrap_label(root_prompt), fillcolor="#F39C12", fontcolor="white", penwidth="2")
 
     node_dir = {}
+    node_map = {}
+    levels = {}
     for node in all_nodes:
         color = _DIRECTION_COLORS.get(node["direction"], "#95A5A6")
         dot.node(node["id"], _wrap_label(node["prompt"]), fillcolor=color, fontcolor="white")
         node_dir[node["id"]] = node["direction"]
+        node_map[node["id"]] = node
+        key = (node["direction"], node["depth"])
+        levels.setdefault(key, []).append(node["id"])
 
+    # Constrain each (direction, depth) group to same rank
+    for (direction, depth), node_ids in levels.items():
+        with dot.subgraph() as s:
+            s.attr(rank='same')
+            for nid in node_ids:
+                s.node(nid)
+
+    # Force side depth-0 nodes onto same rank as root
+    if ("side", 0) in levels:
+        with dot.subgraph() as s:
+            s.attr(rank='same')
+            s.node("root")
+            for nid in levels[("side", 0)]:
+                s.node(nid)
+
+    # Visible edges
     for src, dst in all_edges:
         color = _DIRECTION_COLORS.get(node_dir.get(dst), "#999999")
-        dot.edge(src, dst, color=color)
+        if node_dir.get(dst) == "super":
+            dot.edge(dst, src, dir='back', color=color)
+        elif node_dir.get(dst) == "side":
+            dot.edge(src, dst, color=color, constraint='false')
+        else:
+            dot.edge(src, dst, color=color)
 
     return dot
 
 
-def prompt_tree(prompt, sub=None, sup=None, side=None, model=1,
-                sub_model=None, sup_model=None, side_model=None,
+def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
+                sub_model=None, super_model=None, side_model=None,
                 concurrency=5, v=True, viz=True):
     """
     Fan out a prompt in all three directions and visualize the tree.
@@ -334,30 +370,30 @@ def prompt_tree(prompt, sub=None, sup=None, side=None, model=1,
     Args:
         prompt: The root prompt.
         sub: n array for subprompts (e.g. [4] or [4, 3]). None to skip.
-        sup: n array for superprompts. None to skip.
+        super: n array for superprompts. None to skip.
         side: n array for sideprompts. None to skip.
         model: Default model for all directions.
         sub_model: Override model for sub direction.
-        sup_model: Override model for sup direction.
+        super_model: Override model for super direction.
         side_model: Override model for side direction.
         concurrency: Max parallel API calls per expansion level.
         v: Verbose output.
         viz: Generate graphviz visualization.
 
     Returns:
-        dict with keys: prompt, sub, sup, side (present only if requested),
+        dict with keys: prompt, sub, super, side (present only if requested),
         graph (graphviz.Digraph, if viz=True)
     """
     directions = []
     if sub is not None:
         directions.append(("sub", sub, sub_model or model))
-    if sup is not None:
-        directions.append(("sup", sup, sup_model or model))
+    if super is not None:
+        directions.append(("super", super, super_model or model))
     if side is not None:
         directions.append(("side", side, side_model or model))
 
     if not directions:
-        raise ValueError("At least one direction required (sub, sup, or side)")
+        raise ValueError("At least one direction required (sub, super, or side)")
 
     if v:
         print(f"prompt_tree: {len(directions)} direction(s) from root")
