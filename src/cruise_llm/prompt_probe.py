@@ -32,6 +32,27 @@ _BUILTIN_TRANSLATORS = ["translate_chinese", "translate_korean", "translate_hind
 
 _ALL_BUILTINS = list(_LLM_TRANSFORMS.keys()) + list(_DETERMINISTIC_TRANSFORMS.keys()) + _BUILTIN_TRANSLATORS
 
+import json as _json
+
+def list_transforms(v=True):
+    """List available prompt transforms. v=True prints descriptions."""
+    if not v:
+        return _ALL_BUILTINS[:]
+    transforms = {}
+    for name, filename in _LLM_TRANSFORMS.items():
+        path = os.path.join(_TRANSFORMS_DIR, filename)
+        with open(path) as f:
+            data = _json.load(f)
+        transforms[name] = data.get("generation_summary", "")
+    for name in _DETERMINISTIC_TRANSFORMS:
+        transforms[name] = "Deterministic: duplicates the prompt"
+    for name in _BUILTIN_TRANSLATORS:
+        lang = name[len("translate_"):]
+        transforms[name] = f"Translates the prompt to {lang}"
+    for name, desc in transforms.items():
+        print(f"  {name}: {desc}")
+    return list(transforms.keys())
+
 
 def _load_transform(name, prompt_model=None, v=False):
     """Load a saved LLM transform by name, returning a callable (prompt) -> str."""

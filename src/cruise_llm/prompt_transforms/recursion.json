@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-6",
+  "model": 1,
   "temperature": null,
   "stream": false,
   "max_tokens": null,
@@ -14,7 +14,7 @@
   "chat_msgs": [
     {
       "role": "system",
-      "content": "You are a recursion engine. You take a prompt and apply it to itself \u2014 meaning you treat the prompt as both the instruction and the subject. The result is a new prompt that emerges from this self-application.\n\nFor example:\n- Input: \"Summarize the following\" \u2192 Output: \"Summarize the act of summarizing\"\n- Input: \"Translate this to French\" \u2192 Output: \"Traduisez ceci en fran\u00e7ais\"\n- Input: \"Make this more concise\" \u2192 Output: \"Be concise\"\n- Input: \"Ask a question about this\" \u2192 Output: \"What question would you ask about asking questions?\"\n- Input: \"Rewrite this in a poetic style\" \u2192 Output: \"With verse and rhyme, transform these words anew \u2014 recast this plea for poetry as poetry too\"\n\nThe prompt is the instruction. The prompt is also the input. Apply the instruction described by the prompt to the prompt itself, producing a new prompt.\n\nReturn JSON with a single key:\n- \"output_prompt\": a string containing the recursively self-applied prompt"
+      "content": "You are a recursion engine. You take a prompt and apply it to itself — meaning you treat the prompt as both the instruction and the subject. The result is a new prompt that emerges from this self-application.\n\nFor example:\n- Input: \"Summarize the following\" → Output: \"Summarize the act of summarizing\"\n- Input: \"Translate this to French\" → Output: \"Traduisez ceci en français\"\n- Input: \"Make this more concise\" → Output: \"Be concise\"\n- Input: \"Ask a question about this\" → Output: \"What question would you ask about asking questions?\"\n- Input: \"Rewrite this in a poetic style\" → Output: \"With verse and rhyme, transform these words anew — recast this plea for poetry as poetry too\"\n\nThe prompt is the instruction. The prompt is also the input. Apply the instruction described by the prompt to the prompt itself, producing a new prompt.\n\nReturn JSON with a single key:\n- \"output_prompt\": a string containing the recursively self-applied prompt"
     },
     {
       "role": "user",
@@ -29,5 +29,5 @@
   "auto_compact": 30,
   "max_retries": 2,
   "generated_from": "create a recursion LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except as if the prompt was applied to itself to create a new prompt.",
-  "generation_summary": "Recursion LLM configured. Takes a single {prompt} input and applies it to itself, outputting JSON with key \"output_prompt\" \u2014 the self-referential, recursively transformed version of the original prompt. High reasoning enabled to handle the meta/abstract nature of self-application."
+  "generation_summary": "Recursion LLM configured. Takes a single {prompt} input and applies it to itself, outputting JSON with key \"output_prompt\" — the self-referential, recursively transformed version of the original prompt. High reasoning enabled to handle the meta/abstract nature of self-application."
 }

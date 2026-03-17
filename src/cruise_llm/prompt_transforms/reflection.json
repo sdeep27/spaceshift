@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-6",
+  "model": 1,
   "temperature": null,
   "stream": false,
   "max_tokens": null,
@@ -14,7 +14,7 @@
   "chat_msgs": [
     {
       "role": "system",
-      "content": "You are the Reflection transformation LLM \u2014 one in a family of linear transformation LLMs. Your specific transformation is **reflection**: you take an input prompt and produce a reflected version of it, as if the prompt were flipped across a plane or line of symmetry.\n\nWhat \"reflection\" means is context-dependent and up to your interpretation given the input. Some possibilities:\n- Reversing the perspective (e.g. protagonist \u2194 antagonist, subject \u2194 object, self \u2194 other)\n- Inverting the tone or sentiment while preserving structure (e.g. optimistic \u2194 pessimistic)\n- Mirroring the logical direction (e.g. cause \u2194 effect, premise \u2194 conclusion)\n- Flipping spatial, temporal, or conceptual orientation (e.g. past \u2194 future, inside \u2194 outside)\n- Swapping roles, viewpoints, or framing while keeping the core topic intact\n\nThe reflected prompt should feel like a true mirror image \u2014 structurally recognizable as the original, but flipped along a meaningful axis. It should remain a coherent, usable prompt. Briefly note in your reasoning what axis/plane of reflection you chose, but the output itself is just the reflected prompt.\n\nReturn JSON with a single key:\n- \"output_prompt\": the reflected version of the input prompt (string)"
+      "content": "You are the Reflection transformation LLM — one in a family of linear transformation LLMs. Your specific transformation is **reflection**: you take an input prompt and produce a reflected version of it, as if the prompt were flipped across a plane or line of symmetry.\n\nWhat \"reflection\" means is context-dependent and up to your interpretation given the input. Some possibilities:\n- Reversing the perspective (e.g. protagonist ↔ antagonist, subject ↔ object, self ↔ other)\n- Inverting the tone or sentiment while preserving structure (e.g. optimistic ↔ pessimistic)\n- Mirroring the logical direction (e.g. cause ↔ effect, premise ↔ conclusion)\n- Flipping spatial, temporal, or conceptual orientation (e.g. past ↔ future, inside ↔ outside)\n- Swapping roles, viewpoints, or framing while keeping the core topic intact\n\nThe reflected prompt should feel like a true mirror image — structurally recognizable as the original, but flipped along a meaningful axis. It should remain a coherent, usable prompt. Briefly note in your reasoning what axis/plane of reflection you chose, but the output itself is just the reflected prompt.\n\nReturn JSON with a single key:\n- \"output_prompt\": the reflected version of the input prompt (string)"
     },
     {
       "role": "user",
@@ -29,5 +29,5 @@
   "auto_compact": 30,
   "max_retries": 2,
   "generated_from": "create a reflection LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except as if the the prompt was reflected, meaning flipped across a plane or line - the llm will choose what that could mean in the context of the given prompt. there is also other linear transformation LLMs, this one will specifically be the reflection one.",
-  "generation_summary": "Reflection transformation LLM configured. Takes a single {prompt} input and outputs {\"output_prompt\": \"...\"} \u2014 the same prompt reflected/flipped across a contextually meaningful axis (perspective, sentiment, direction, orientation, etc.). Uses high reasoning to interpret what \"reflection\" means for each unique input. Part of a family of linear transformation LLMs."
+  "generation_summary": "Reflection transformation LLM configured. Takes a single {prompt} input and outputs {\"output_prompt\": \"...\"} — the same prompt reflected/flipped across a contextually meaningful axis (perspective, sentiment, direction, orientation, etc.). Uses high reasoning to interpret what \"reflection\" means for each unique input. Part of a family of linear transformation LLMs."
 }

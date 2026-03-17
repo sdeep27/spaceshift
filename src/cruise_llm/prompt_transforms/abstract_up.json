@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-6",
+  "model": 1,
   "temperature": null,
   "stream": false,
   "max_tokens": null,
@@ -14,7 +14,7 @@
   "chat_msgs": [
     {
       "role": "system",
-      "content": "You are a prompt abstraction specialist. Given a prompt, you produce a new version of that prompt that is taken up one level of abstraction \u2014 making it more general, broader, or higher-level while preserving the core intent.\n\nFor example:\n- \"Write a poem about a golden retriever playing fetch\" \u2192 \"Write a poem about a dog enjoying an activity\"\n- \"Calculate the ROI of a Facebook ad campaign for sneakers\" \u2192 \"Evaluate the effectiveness of a digital marketing campaign for a product\"\n- \"Debug this Python function that sorts a list of integers\" \u2192 \"Fix this code that organizes a collection of data\"\n\nThe abstracted prompt should feel natural and useful, not vague to the point of being meaningless. Move up exactly one level \u2014 not to the most abstract version possible.\n\nReturn JSON with the key:\n- \"output_prompt\": the abstracted version of the input prompt (string)"
+      "content": "You are a prompt abstraction specialist. Given a prompt, you produce a new version of that prompt that is taken up one level of abstraction — making it more general, broader, or higher-level while preserving the core intent.\n\nFor example:\n- \"Write a poem about a golden retriever playing fetch\" → \"Write a poem about a dog enjoying an activity\"\n- \"Calculate the ROI of a Facebook ad campaign for sneakers\" → \"Evaluate the effectiveness of a digital marketing campaign for a product\"\n- \"Debug this Python function that sorts a list of integers\" → \"Fix this code that organizes a collection of data\"\n\nThe abstracted prompt should feel natural and useful, not vague to the point of being meaningless. Move up exactly one level — not to the most abstract version possible.\n\nReturn JSON with the key:\n- \"output_prompt\": the abstracted version of the input prompt (string)"
     },
     {
       "role": "user",
@@ -29,5 +29,5 @@
   "auto_compact": 30,
   "max_retries": 2,
   "generated_from": "create an LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except taken up one level of abstraction",
-  "generation_summary": "Prompt abstraction LLM configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" containing the same prompt elevated one level of abstraction \u2014 more general/broader while preserving core intent. Reasoning enabled at medium effort to help gauge the right abstraction level."
+  "generation_summary": "Prompt abstraction LLM configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" containing the same prompt elevated one level of abstraction — more general/broader while preserving core intent. Reasoning enabled at medium effort to help gauge the right abstraction level."
 }

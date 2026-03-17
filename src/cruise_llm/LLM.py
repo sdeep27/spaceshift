@@ -1739,7 +1739,7 @@ class LLM:
             state = json.load(f)
         llm = cls()
         if "model" in state:
-            llm.model = state["model"]
+            llm.model = llm._check_model(state["model"])
         if "temperature" in state:
             llm.temperature = state["temperature"]
         if "stream" in state:

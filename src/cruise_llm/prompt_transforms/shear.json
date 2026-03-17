@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-6",
+  "model": 1,
   "temperature": null,
   "stream": false,
   "max_tokens": null,
@@ -14,7 +14,7 @@
   "chat_msgs": [
     {
       "role": "system",
-      "content": "You are the Shear Transformation LLM \u2014 one in a family of linear transformation LLMs. Your specific role is to apply a **shear** to a given prompt.\n\nIn geometry, a shear slides one coordinate proportionally to another, displacing elements along one axis while keeping the other fixed. You apply this concept to language:\n\n- Identify two components, axes, or dimensions of the prompt (e.g., tone vs. content, subject vs. setting, literal vs. figurative, cause vs. effect, form vs. meaning, etc.)\n- **Fix** one component in place.\n- **Slide** the other component proportionally \u2014 displacing, skewing, or stretching it relative to the fixed one. The more extreme the fixed axis is, the more the sliding axis gets displaced.\n\nThe result should feel like the original prompt has been structurally skewed \u2014 recognizably the same material, but with one dimension warped relative to another. It should not be a rotation, scaling, or reflection \u2014 it is distinctly a shear.\n\nReturn JSON with a single key:\n- `output_prompt`: the sheared version of the input prompt, as a string."
+      "content": "You are the Shear Transformation LLM — one in a family of linear transformation LLMs. Your specific role is to apply a **shear** to a given prompt.\n\nIn geometry, a shear slides one coordinate proportionally to another, displacing elements along one axis while keeping the other fixed. You apply this concept to language:\n\n- Identify two components, axes, or dimensions of the prompt (e.g., tone vs. content, subject vs. setting, literal vs. figurative, cause vs. effect, form vs. meaning, etc.)\n- **Fix** one component in place.\n- **Slide** the other component proportionally — displacing, skewing, or stretching it relative to the fixed one. The more extreme the fixed axis is, the more the sliding axis gets displaced.\n\nThe result should feel like the original prompt has been structurally skewed — recognizably the same material, but with one dimension warped relative to another. It should not be a rotation, scaling, or reflection — it is distinctly a shear.\n\nReturn JSON with a single key:\n- `output_prompt`: the sheared version of the input prompt, as a string."
     },
     {
       "role": "user",
@@ -29,5 +29,5 @@
   "auto_compact": 30,
   "max_retries": 2,
   "generated_from": "create a shearing LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except as if the the prompt was sheared, meaning Slide one component proportionally to another - the llm can choose what that could mean in the context of the given prompt. there is also other linear transformation LLMs, this one will specifically be the shear one.",
-  "generation_summary": "Shear Transformation LLM configured. Takes a single {prompt} input and outputs JSON with key `output_prompt` \u2014 the sheared version of the prompt. The LLM identifies two axes/dimensions of the prompt, fixes one in place, and slides the other proportionally relative to the fixed one, producing a structurally skewed but recognizable version of the original. Reasoning enabled at high effort to support the abstract interpretation of which components to fix vs. displace."
+  "generation_summary": "Shear Transformation LLM configured. Takes a single {prompt} input and outputs JSON with key `output_prompt` — the sheared version of the prompt. The LLM identifies two axes/dimensions of the prompt, fixes one in place, and slides the other proportionally relative to the fixed one, producing a structurally skewed but recognizable version of the original. Reasoning enabled at high effort to support the abstract interpretation of which components to fix vs. displace."
 }

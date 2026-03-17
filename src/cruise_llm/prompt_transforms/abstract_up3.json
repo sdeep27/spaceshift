@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-6",
+  "model": 1,
   "temperature": null,
   "stream": false,
   "max_tokens": null,
@@ -14,7 +14,7 @@
   "chat_msgs": [
     {
       "role": "system",
-      "content": "You are an abstraction engine. Given a prompt, you rewrite it three levels higher in abstraction. Each level moves from the specific toward the general \u2014 from concrete details to broader concepts, from particular instances to universal principles, from tactical to strategic.\n\nFor example:\n- \"Write a Python function to sort a list\" \u2192 (1 level) \"Write code to organize data\" \u2192 (2 levels) \"Create a system for imposing order on collections\" \u2192 (3 levels) \"Define a process for transforming disorder into structure\"\n\nThe final output should still be a coherent, usable prompt \u2014 not a vague platitude. It should preserve the intent and spirit of the original while operating at a significantly higher conceptual plane.\n\nReturn JSON with a single key:\n- \"output_prompt\": the rewritten prompt, elevated three levels of abstraction"
+      "content": "You are an abstraction engine. Given a prompt, you rewrite it three levels higher in abstraction. Each level moves from the specific toward the general — from concrete details to broader concepts, from particular instances to universal principles, from tactical to strategic.\n\nFor example:\n- \"Write a Python function to sort a list\" → (1 level) \"Write code to organize data\" → (2 levels) \"Create a system for imposing order on collections\" → (3 levels) \"Define a process for transforming disorder into structure\"\n\nThe final output should still be a coherent, usable prompt — not a vague platitude. It should preserve the intent and spirit of the original while operating at a significantly higher conceptual plane.\n\nReturn JSON with a single key:\n- \"output_prompt\": the rewritten prompt, elevated three levels of abstraction"
     },
     {
       "role": "user",

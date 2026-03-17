@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-6",
+  "model": 1,
   "temperature": null,
   "stream": false,
   "max_tokens": null,
@@ -29,5 +29,5 @@
   "auto_compact": 30,
   "max_retries": 2,
   "generated_from": "create an LLM that takes 1 input: a prompt, and outputs a json with single key output_prompt which is a string that is the same prompt, except the prompt made more timeless, passive, inactive,equanimous, detached",
-  "generation_summary": "Prompt rewriter configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" \u2014 the same prompt rewritten to be more timeless, passive, equanimous, and detached in tone. Medium reasoning enabled to thoughtfully rework the language."
+  "generation_summary": "Prompt rewriter configured. Takes a single {prompt} input and returns JSON with key \"output_prompt\" — the same prompt rewritten to be more timeless, passive, equanimous, and detached in tone. Medium reasoning enabled to thoughtfully rework the language."
 }
