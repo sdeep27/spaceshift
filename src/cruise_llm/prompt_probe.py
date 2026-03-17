@@ -95,6 +95,22 @@ def _resolve_transforms(transforms, n, prompt_model, v=False):
     return resolved
 
 
+def prompt_transform(prompt, transform, model=None, v=False):
+    """Apply a single prompt transform and return the transformed prompt string."""
+    if callable(transform):
+        return transform(prompt)
+    if transform in _LLM_TRANSFORMS:
+        fn = _load_transform(transform, prompt_model=model, v=v)
+        return fn(prompt)
+    if transform in _DETERMINISTIC_TRANSFORMS:
+        return _DETERMINISTIC_TRANSFORMS[transform](prompt)
+    if transform.startswith("translate_"):
+        language = transform[len("translate_"):]
+        mutate, _ = _make_translator(language, prompt_model=model, v=v)
+        return mutate(prompt)
+    raise ValueError(f"Unknown transform: '{transform}'. Available: {_ALL_BUILTINS}")
+
+
 def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', output_model=1, save=None, v=False):
     """
     Translate prompt to another language, generate a response, translate back.

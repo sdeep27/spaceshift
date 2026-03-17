@@ -713,10 +713,13 @@ class LLM:
     def _check_model(self, inputted_model):
         if not self.sub_closest_model:
             return inputted_model
-        if inputted_model and inputted_model.startswith('together_ai/'):
-            return inputted_model
         avail_models = self.get_models()
         if inputted_model in avail_models:
+            return inputted_model
+
+        # Trust models from our own rankings (may be newer than litellm's catalog)
+        ranked_models = {_get_model_name(e) for cat in model_rankings.values() for e in cat}
+        if inputted_model in ranked_models:
             return inputted_model
 
         category_result = self._handle_model_category(inputted_model)
@@ -1610,12 +1613,16 @@ class LLM:
         Returns:
             list: A list of model name strings.
         """
-        if model_str:
-            models = [i for i in litellm.get_valid_models() if model_str in i]
-        else:
-            models = litellm.get_valid_models()
+        from litellm.utils import _infer_valid_provider_from_env_vars
+        providers = _infer_valid_provider_from_env_vars(None)
+        provider_prefixes = tuple(p.value + '/' for p in providers)
+        # get_valid_models has env-aware unprefixed models (e.g. 'gpt-5'),
+        # model_cost has modern prefixed models (e.g. 'together_ai/zai-org/GLM-5')
+        models = list(set(litellm.get_valid_models()) | {k for k in litellm.model_cost if k.startswith(provider_prefixes)})
         if text_model:
-            models = [model for model in models if litellm.model_cost.get(model, {}).get('mode') in ['chat', 'responses']]
+            models = [m for m in models if litellm.model_cost.get(m, {}).get('mode') in ['chat', 'responses']]
+        if model_str:
+            models = [m for m in models if model_str in m]
         return models
 
     def models_with_search(self, model_str=None):
