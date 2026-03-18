@@ -277,8 +277,23 @@ def _run_expansion(prompt, n, direction, model, search, concurrency, v):
             for i, nd in enumerate(current):
                 print(f"    -> {nd['prompt'][:90]}{'...' if len(nd['prompt']) > 90 else ''}")
 
-    final = [{"prompt": nd["prompt"], "depth": nd["depth"], "parent": nd.get("parent", prompt)} for nd in current]
-    return final, all_nodes, all_edges
+    # Build parent lookup from edges
+    parent_map = {dst: src for src, dst in all_edges}
+    all_prompts = []
+    for nd in all_nodes:
+        parent_id = parent_map.get(nd["id"], "root")
+        parent_prompt = prompt if parent_id == "root" else next(
+            n2["prompt"] for n2 in all_nodes if n2["id"] == parent_id
+        )
+        all_prompts.append({
+            "id": nd["id"],
+            "prompt": nd["prompt"],
+            "depth": nd["depth"],
+            "direction": nd["direction"],
+            "parent": parent_prompt,
+        })
+
+    return all_prompts, all_nodes, all_edges
 
 
 def _wrap_label(text, width=40, max_lines=3):
@@ -360,7 +375,7 @@ def _build_graph(root_prompt, all_nodes, all_edges):
     return dot
 
 
-def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
+def prompt_tree(prompt, sub_n=None, super_n=None, side_n=None, model=1,
                 sub_model=None, super_model=None, side_model=None,
                 search=False, concurrency=5, v=True, viz=True):
     """
@@ -371,9 +386,9 @@ def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
 
     Args:
         prompt: The root prompt.
-        sub: n array for subprompts (e.g. [4] or [4, 3]). None to skip.
-        super: n array for superprompts. None to skip.
-        side: n array for sideprompts. None to skip.
+        sub_n: n array for subprompts (e.g. [4] or [4, 3]). None to skip.
+        super_n: n array for superprompts. None to skip.
+        side_n: n array for sideprompts. None to skip.
         model: Default model for all directions.
         sub_model: Override model for sub direction.
         super_model: Override model for super direction.
@@ -384,16 +399,16 @@ def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
         viz: Generate graphviz visualization.
 
     Returns:
-        dict with keys: prompt, sub, super, side (present only if requested),
-        graph (graphviz.Digraph, if viz=True)
+        dict with keys: prompt, sub, super, side (present only if requested,
+        each containing ALL nodes across all depths), graph (graphviz.Digraph, if viz=True)
     """
     directions = []
-    if sub is not None:
-        directions.append(("sub", sub, sub_model or model))
-    if super is not None:
-        directions.append(("super", super, super_model or model))
-    if side is not None:
-        directions.append(("side", side, side_model or model))
+    if sub_n is not None:
+        directions.append(("sub", sub_n, sub_model or model))
+    if super_n is not None:
+        directions.append(("super", super_n, super_model or model))
+    if side_n is not None:
+        directions.append(("side", side_n, side_model or model))
 
     if not directions:
         raise ValueError("At least one direction required (sub, super, or side)")
@@ -412,14 +427,179 @@ def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
         }
         for future in as_completed(futures):
             direction = futures[future]
-            final, nodes, edges = future.result()
-            result[direction] = final
+            dir_prompts, nodes, edges = future.result()
+            result[direction] = dir_prompts
             all_nodes.extend(nodes)
             all_edges.extend(edges)
             if v:
-                print(f"  [{direction}] {len(final)} final prompt(s)")
+                print(f"  [{direction}] {len(dir_prompts)} prompt(s) across {max(p['depth'] for p in dir_prompts) + 1} level(s)")
 
     if viz:
         result["graph"] = _build_graph(prompt, all_nodes, all_edges)
+        result["all_nodes"] = all_nodes
+        result["all_edges"] = all_edges
 
     return result
+
+
+def prompt_research(
+    prompt,
+    sub_n=None, super_n=None, side_n=None,
+    prompt_model=1,
+    sub_model=None, super_model=None, side_model=None,
+    output_model=None,
+    sub_output_model=None, super_output_model=None, side_output_model=None,
+    search=False, search_tree=False,
+    save=None,
+    concurrency=5,
+    v=True,
+):
+    """
+    Deep research: build a prompt tree and generate responses for every node.
+
+    Expands a prompt in sub/super/side directions, then generates LLM responses
+    for the root prompt and every node in the tree. Optionally saves all outputs
+    as markdown files with YAML frontmatter and the tree visualization.
+
+    Args:
+        prompt: A prompt string, or an existing prompt_tree result dict.
+        sub_n: n array for subprompts (e.g. [5, 3]). None to skip.
+        super_n: n array for superprompts. None to skip.
+        side_n: n array for sideprompts. None to skip.
+        prompt_model: Default model for tree building. Defaults to 1.
+        sub_model: Override tree-building model for sub direction.
+        super_model: Override tree-building model for super direction.
+        side_model: Override tree-building model for side direction.
+        output_model: Default model for generating responses. Defaults to prompt_model.
+        sub_output_model: Override output model for sub nodes.
+        super_output_model: Override output model for super nodes.
+        side_output_model: Override output model for side nodes.
+        search (bool): Enable web search for response generation.
+        search_tree (bool): Enable web search for tree building.
+        save: Directory path to save outputs. None = don't save.
+        concurrency: Max parallel API calls. Defaults to 5.
+        v: Verbose output.
+
+    Returns:
+        dict with keys: prompt, tree, outputs (list of dicts with prompt/response/direction/depth),
+        root_output (response for the original prompt)
+    """
+    # Build or reuse tree
+    if isinstance(prompt, dict) and "prompt" in prompt:
+        tree = prompt
+        prompt = tree["prompt"]
+    else:
+        if sub_n is None and super_n is None and side_n is None:
+            raise ValueError("At least one direction required (sub_n, super_n, or side_n)")
+        tree = prompt_tree(
+            prompt, sub_n=sub_n, super_n=super_n, side_n=side_n,
+            model=prompt_model, sub_model=sub_model, super_model=super_model, side_model=side_model,
+            search=search_tree, concurrency=concurrency, v=v, viz=True,
+        )
+
+    output_model = output_model or prompt_model
+
+    # Collect all prompts to generate responses for
+    # Each entry: (prompt_text, direction, depth, node_id, output_model_for_this_node)
+    jobs = [{"prompt": prompt, "direction": "root", "depth": -1, "id": "root",
+             "output_model": output_model}]
+
+    for direction in ("sub", "super", "side"):
+        if direction not in tree:
+            continue
+        dir_output_model = {
+            "sub": sub_output_model,
+            "super": super_output_model,
+            "side": side_output_model,
+        }[direction] or output_model
+
+        # Count per depth for indexing
+        depth_counters = {}
+        for node in tree[direction]:
+            d = node["depth"]
+            idx = depth_counters.get(d, 0)
+            depth_counters[d] = idx + 1
+            jobs.append({
+                "prompt": node["prompt"],
+                "direction": direction,
+                "depth": d,
+                "id": f"{direction}_L{d}_{idx}",
+                "parent": node.get("parent"),
+                "output_model": dir_output_model,
+            })
+
+    if v:
+        print(f"\nGenerating {len(jobs)} responses...")
+
+    # Generate responses concurrently
+    responses = [None] * len(jobs)
+
+    def _run_job(idx):
+        job = jobs[idx]
+        llm = LLM(model=job["output_model"], search=search, v=False)
+        return idx, llm.user(job["prompt"]).res()
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = {pool.submit(_run_job, i): i for i in range(len(jobs))}
+        done = 0
+        for future in as_completed(futures):
+            idx, response = future.result()
+            responses[idx] = response
+            done += 1
+            if v:
+                job = jobs[idx]
+                print(f"  [{done}/{len(jobs)}] {job['id']}: {job['prompt'][:70]}{'...' if len(job['prompt']) > 70 else ''}")
+
+    # Build outputs
+    outputs = []
+    for job, response in zip(jobs, responses):
+        entry = {
+            "id": job["id"],
+            "prompt": job["prompt"],
+            "response": response,
+            "direction": job["direction"],
+            "depth": job["depth"],
+        }
+        if "parent" in job:
+            entry["parent"] = job["parent"]
+        outputs.append(entry)
+
+    result = {
+        "prompt": prompt,
+        "tree": tree,
+        "root_output": responses[0],
+        "outputs": outputs,
+    }
+
+    if save:
+        result["saved"] = _save_research(result, save)
+
+    return result
+
+
+def _save_research(result, save_dir):
+    from .utils import _write_md
+    import os
+
+    os.makedirs(save_dir, exist_ok=True)
+    saved = []
+
+    for entry in result["outputs"]:
+        meta = {"prompt": entry["prompt"], "direction": entry["direction"], "depth": entry["depth"]}
+        if "parent" in entry:
+            meta["parent"] = entry["parent"]
+
+        filename = f"{entry['id']}.md"
+        path = os.path.join(save_dir, filename)
+        _write_md(path, entry["response"], meta)
+        saved.append(path)
+
+    # Save tree visualization
+    tree = result.get("tree", {})
+    graph = tree.get("graph")
+    if graph:
+        graph_path = os.path.join(save_dir, "tree")
+        graph.render(graph_path, cleanup=True)
+        saved.append(f"{graph_path}.svg")
+
+    return saved
