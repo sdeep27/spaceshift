@@ -46,6 +46,10 @@ claude/
 # Docs
 docs/node_modules/
 docs/.astro/
+docs/dist/
+
+# Deploy
+deploy.sh
 
 # macOS
 .DS_Store
