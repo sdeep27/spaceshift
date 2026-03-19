@@ -1,0 +1,110 @@
+---
+title: Viewer
+description: Browse markdown results in the browser with a built-in local viewer.
+---
+
+After running `research_tree`, `grid_search`, `compare_models`, or `prompt_probe`, you get a directory of `.md` files with YAML frontmatter. The built-in viewer lets you browse them all in a two-panel browser interface — no extra dependencies required.
+
+## CLI
+
+```bash
+# View the current directory
+spaceshift view
+
+# View a specific output directory
+spaceshift view quantum_grid
+
+# Custom port, don't auto-open browser
+spaceshift view results/ --port 9000 --no-open
+```
+
+## Python
+
+```python
+from spaceshift import view
+
+view("quantum_grid")
+view("results/", port=9000, no_open=True)
+```
+
+## What You Get
+
+A local server at `http://127.0.0.1:8383` with:
+
+- **Sidebar** — all `.md` and `.svg` files in the directory, grouped by subdirectory when subdirectories exist
+- **Content area** — rendered markdown with a metadata card showing YAML frontmatter fields (prompt, model, score, rank, transform, etc.)
+- **SVG support** — tree visualizations from `research_tree` displayed inline
+- **Smart sorting** — research_tree files sorted by direction (root → sub → super → side) then depth then index; ranked files sorted by rank number
+
+The first file is auto-selected on load. Press `Ctrl+C` in the terminal to stop the server.
+
+## How It Works
+
+The viewer runs entirely on Python's standard library `http.server` — no new dependencies are installed. The HTML, CSS, and JS are embedded in the Python module as a single-page app. Markdown is rendered client-side using [marked.js](https://cdn.jsdelivr.net/npm/marked/marked.min.js) loaded from a CDN.
+
+YAML frontmatter is parsed server-side with a simple string parser that handles the exact format produced by spaceshift's `save=` output (`key: value` and `key: |\n  multiline`).
+
+## API
+
+### `view(path=".", port=8383, no_open=False)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | `str` | `"."` | Directory containing `.md` / `.svg` files |
+| `port` | `int` | `8383` | Port to serve on. Auto-increments if taken. |
+| `no_open` | `bool` | `False` | If `True`, don't auto-open the browser |
+
+### CLI
+
+```
+spaceshift view [path] [--port N] [--no-open]
+```
+
+All arguments mirror the Python function.
+
+## Routes
+
+The server exposes a small JSON API used by the frontend:
+
+| Route | Description |
+|-------|-------------|
+| `GET /` | The HTML viewer |
+| `GET /api/files` | JSON list of `.md` and `.svg` files with paths, sizes, modified times |
+| `GET /api/file?path=X` | JSON `{meta: {...}, body: "..."}` — parsed frontmatter + markdown body |
+| `GET /api/svg?path=X` | Raw SVG content |
+
+All paths are sanitized — traversal attempts (e.g. `../`) are rejected. Only `.md` and `.svg` files are served.
+
+## Example Workflows
+
+### Browse a research tree
+
+```python
+from spaceshift import research_tree, view
+
+research_tree("Effects of AI on education", save="ai_education")
+view("ai_education")
+# Opens browser: root.md first, then sub/super/side branches sorted by direction and depth
+# Click tree.svg to see the full tree visualization
+```
+
+### Review grid search results
+
+```python
+from spaceshift import grid_search, view
+
+grid_search("Explain recursion", models=[1, 2, 3], n_transforms=4, save="recursion_grid")
+view("recursion_grid")
+# Files sorted by rank — top-scoring combination first
+# Metadata card shows prompt, transform, model, score, and rank for each file
+```
+
+### Compare model outputs
+
+```python
+from spaceshift import compare_models, view
+
+compare_models("Explain dark matter", models=[1, 2, 3, 4, 5], save="dark_matter")
+view("dark_matter")
+# Ranked files: 1_claude-opus-4-6.md, 2_gpt-5.4.md, ...
+```

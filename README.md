@@ -2,6 +2,8 @@
 
 An open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
 
+**[Full documentation at spcshft.com](https://spcshft.com)**
+
 ```python
 from spaceshift import research_tree
 
@@ -217,6 +219,19 @@ research_tree("Effects of AI on education", save="ai_education")
 # Grid search — saves per-cell files with transform + model in filename
 grid_search("Explain gravity", save="gravity_grid")
 ```
+
+Browse any output directory in the browser with the built-in viewer:
+
+```bash
+spaceshift view gravity_grid
+```
+
+```python
+from spaceshift import view
+view("gravity_grid")
+```
+
+Two-panel layout: sidebar with smart-sorted file list, content area with rendered markdown and frontmatter metadata cards. No dependencies — runs on Python's stdlib server with client-side markdown rendering.
 
 ---
 

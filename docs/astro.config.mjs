@@ -81,6 +81,7 @@ export default defineConfig({
               slug: "reference/transforms-catalog",
             },
             { label: "Markdown Output", slug: "reference/markdown-output" },
+            { label: "Viewer", slug: "reference/viewer" },
           ],
         },
       ],
