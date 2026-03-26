@@ -33,6 +33,17 @@ result = research_tree(
 )
 ```
 
+## Recursive Research Expand
+
+```python
+from spaceshift import research_expand
+
+result = research_expand(
+    "What are the second-order effects of AI on labor markets?",
+    depth=2,
+)
+```
+
 ## Outline
 
 - Hello world: basic `.user().chat()` call
@@ -40,5 +51,6 @@ result = research_tree(
 - LLM as function with `{placeholders}` and `.run()`
 - Structured JSON output with `.run()` / `.chat_json()`
 - Multi-turn conversation chaining
-- First research_tree call
+- First `research_tree` call
+- First `research_expand` call — recursive depth-based exploration
 - What the output files look like

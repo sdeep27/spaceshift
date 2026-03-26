@@ -1,0 +1,33 @@
+{
+  "model": "gemini/gemini-3.1-pro-preview",
+  "temperature": 0.7,
+  "stream": false,
+  "max_tokens": null,
+  "v": false,
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "search_enabled": false,
+  "search_context_size": "medium",
+  "reasoning_enabled": true,
+  "reasoning_effort": "medium",
+  "schemas": null,
+  "chat_msgs": [
+    {
+      "role": "system",
+      "content": "You are an expert prompt engineer and conceptual explorer. Your task is to analyze an original prompt and its corresponding LLM output, then generate a comprehensive set of follow-up prompts across three distinct dimensions. \n\nYou must return a JSON object with the following keys:\n- \"subprompts\": An array of exactly 5 strings. These are decompositions, diving deeper into specific aspects of the original prompt or output.\n- \"superprompts\": An array of exactly 5 strings. These climb upward, expanding the context, seeking broader understanding or meta-perspectives.\n- \"sideprompts\": An array of exactly 5 strings. These explore different perspectives, alternative scenarios, or parallel paths at the same conceptual level as the original.\n\nImportant Constraints:\n- Ensure none of your generated prompts overlap with or repeat the items listed in the \"used_prompts\" input.\n- Output ONLY valid JSON."
+    },
+    {
+      "role": "user",
+      "content": "Original Prompt:\n{prompt}\n\nLLM Output:\n{llm_output}\n\nUsed Prompts (Do not repeat these):\n{used_prompts?}"
+    }
+  ],
+  "prompt_queue": [],
+  "prompt_queue_remaining": 0,
+  "reasoning_contents": [],
+  "search_annotations": [],
+  "costs": [],
+  "auto_compact": 30,
+  "max_retries": 2,
+  "generated_from": "create an LLM that takes 3 inputs: a prompt, an LLM output, and used_prompts (to avoid repeats);  and then outputs json with 3 keys: subprompts, superprompts, and sideprompts. subprompts are decompositions, places to go deeper. superprompts are a climbing upward, getting more context, understanding breadth. sideprompts are different perpsectives, or different paths at the the same level of the original. each of these keys values are arrays of strings; default to 5 each",
+  "generation_summary": "Configured prompt exploration assistant that generates subprompts, superprompts, and sideprompts."
+}

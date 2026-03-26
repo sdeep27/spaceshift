@@ -1,0 +1,109 @@
+---
+title: Research Expand
+description: Recursive research expansion — generate outputs, expand into followups, and recurse to arbitrary depth.
+---
+
+`research_expand` is a recursive research function. Unlike `research_tree` which builds a fixed tree structure then generates responses, `research_expand` generates a response first, then uses it to produce followup prompts, and recurses — each level informed by the content of the previous.
+
+```python
+from spaceshift import research_expand
+
+result = research_expand(
+    "What are the second-order effects of AI on labor markets?",
+    depth=2,
+    model=[1, 2],
+)
+
+print(result["root_output"])
+print(len(result["outputs"]))
+```
+
+## How it works
+
+1. Generate a response to the root prompt
+2. Feed the prompt + response to a followup LLM that produces 5 subprompts, 5 superprompts, and 5 sideprompts
+3. Generate responses for all 15 followup prompts
+4. Recurse: each followup becomes the input for the next depth level
+5. Prompts are deduplicated across the entire tree to avoid redundant work
+
+## Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `prompt` | required | The initial research question |
+| `depth` | `2` | Recursion depth. 1 = root + one level of followups. 2 = two levels. |
+| `model` | `1` | Model for generating research outputs. A single value for all depths, or a list where `model[i]` is used for depth `i`. |
+| `followup_model` | `None` | Model for generating followup prompts. `None` uses a built-in prompt engineer with reasoning. Can be a model name/int, or an `LLM` instance with template vars `{prompt}`, `{llm_output}`, `{used_prompts?}`. |
+| `search` | `"auto"` | Web search for output generation — auto-detects model support |
+| `concurrency` | `5` | Max parallel API calls |
+| `save` | `True` | `True` to auto-name from prompt, string for explicit path, `False` to skip |
+| `viz` | `True` | Generate tree visualization (requires graphviz) |
+| `v` | `True` | Verbose progress output |
+
+## Per-depth model selection
+
+Pass a list to `model=` to use different models at different depths. This is useful for using a more capable (expensive) model for the root and early nodes, and a faster model for deeper expansion:
+
+```python
+result = research_expand(
+    "The future of nuclear fusion energy",
+    depth=3,
+    model=[1, 3, "fast"],   # model 1 for root, 3 for depth 1, fast for depth 2+
+)
+```
+
+## Custom followup generation
+
+The default followup LLM uses reasoning to generate high-quality followup prompts. You can replace it with your own:
+
+```python
+from spaceshift import LLM, research_expand
+
+# Use a custom followup generator
+fup = LLM(model="fast").sys("Generate followups as JSON...").user("{prompt}\n{llm_output}")
+result = research_expand("...", followup_model=fup)
+```
+
+The followup LLM should accept template variables `{prompt}`, `{llm_output}`, and `{used_prompts?}` (optional, for dedup), and return JSON with keys `subprompts`, `superprompts`, `sideprompts` — each an array of strings.
+
+## Output structure
+
+```python
+result = {
+    "prompt": "...",                # original prompt
+    "root_output": "...",           # response to the root prompt
+    "outputs": [...],               # all nodes (root + all expansions)
+    "graph": graphviz.Digraph,      # tree visualization (if viz=True)
+    "saved": ["path/to/file.md"],   # saved file paths (if save enabled)
+}
+```
+
+Each node in `outputs`:
+
+```python
+{
+    "id": "sub_0",
+    "prompt": "...",
+    "response": "...",
+    "title": "Labor Market Polarization",
+    "direction": "sub",             # sub, super, side, or root
+    "depth": 0,
+    "parent": "...",
+    "parent_id": "root",
+    "model": "1",
+    "citations": ["https://..."],   # when web search is active
+}
+```
+
+## File output
+
+Files are saved incrementally as each node completes — if the process is interrupted, you keep everything generated so far. Files are named by their LLM-generated title (e.g., `Labor Market Polarization.md`) with automatic deduplication for collisions.
+
+## research_tree vs research_expand
+
+| | `research_tree` | `research_expand` |
+|---|---|---|
+| **Tree construction** | Builds prompt tree first, then generates all responses | Generates response first, then expands from content |
+| **Followups informed by** | Original prompt only | Both prompt and its generated response |
+| **Depth control** | Via `sub_n`, `super_n`, `side_n` level counts | Single `depth` parameter |
+| **Best for** | Structured decomposition of a topic | Deep, content-driven recursive exploration |

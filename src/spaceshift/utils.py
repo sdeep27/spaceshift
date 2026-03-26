@@ -9,7 +9,11 @@ def _write_md(path, content, meta=None):
         if meta:
             f.write("---\n")
             for key, val in meta.items():
-                if "\n" in str(val):
+                if isinstance(val, list):
+                    f.write(f"{key}:\n")
+                    for item in val:
+                        f.write(f"  - {item}\n")
+                elif "\n" in str(val):
                     f.write(f"{key}: |\n")
                     for line in str(val).splitlines():
                         f.write(f"  {line}\n")

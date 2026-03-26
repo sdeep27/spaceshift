@@ -53,6 +53,7 @@ export default defineConfig({
               slug: "research/directional-exploration",
             },
             { label: "Research Tree", slug: "research/research-tree" },
+            { label: "Research Expand", slug: "research/research-expand" },
             { label: "Prompt Transforms", slug: "research/prompt-transforms" },
             {
               label: "Language Transform",

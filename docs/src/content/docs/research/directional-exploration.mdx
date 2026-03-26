@@ -25,6 +25,8 @@ tree = prompt_tree(
 )
 ```
 
+All directional functions default to `search="auto"` — web search is enabled automatically when the model supports it.
+
 ## Outline
 
 - `subprompt(prompt, n=[])` — decompose downward into subtopics
@@ -32,6 +34,7 @@ tree = prompt_tree(
 - `sideprompt(prompt, n=[])` — lateral exploration of sibling questions
 - `prompt_tree()` — all three directions combined
 - Multi-level decomposition with nested `n` values (e.g., `n=[5, 3]`)
+- `search="auto"` — auto-detects model web search support
 - Tree visualization with graphviz
 - Why superprompt and sideprompt are novel contributions
 - Practical research workflows combining all three

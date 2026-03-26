@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .LLM import LLM
 
 
-def subprompt(prompt, n=[5], model=1, search=False, concurrency=5, v=True):
+def subprompt(prompt, n=[5], model=1, search="auto", concurrency=5, v=True):
     """
     Recursively decompose a prompt into smaller subprompts across multiple levels.
 
@@ -24,6 +24,8 @@ def subprompt(prompt, n=[5], model=1, search=False, concurrency=5, v=True):
             - "depth": the level index that produced it
             - "parent": the parent prompt text it was split from
     """
+    search = _resolve_search_auto(search, model, v=v)
+
     if isinstance(n, int):
         n = [n]
 
@@ -108,7 +110,7 @@ _SIBLING_SYSTEM = (
 )
 
 
-def superprompt(prompt, n=[3], model=1, search=False, concurrency=5, v=True):
+def superprompt(prompt, n=[3], model=1, search="auto", concurrency=5, v=True):
     """
     Iteratively generate parent/super prompts — prompts one level up in abstraction.
 
@@ -130,6 +132,8 @@ def superprompt(prompt, n=[3], model=1, search=False, concurrency=5, v=True):
             - "depth": the level index that produced it
             - "parent": the prompt it was generated from
     """
+    search = _resolve_search_auto(search, model, v=v)
+
     if isinstance(n, int):
         n = [n]
 
@@ -161,7 +165,7 @@ def superprompt(prompt, n=[3], model=1, search=False, concurrency=5, v=True):
     return current
 
 
-def sideprompt(prompt, n=[4], model=1, search=False, concurrency=5, v=True):
+def sideprompt(prompt, n=[4], model=1, search="auto", concurrency=5, v=True):
     """
     Iteratively generate side prompts — prompts at the same abstraction level
     exploring different perspectives.
@@ -184,6 +188,8 @@ def sideprompt(prompt, n=[4], model=1, search=False, concurrency=5, v=True):
             - "depth": the level index that produced it
             - "parent": the prompt it was generated from
     """
+    search = _resolve_search_auto(search, model, v=v)
+
     if isinstance(n, int):
         n = [n]
 
@@ -377,7 +383,7 @@ def _build_graph(root_prompt, all_nodes, all_edges):
 
 def prompt_tree(prompt, sub_n=None, super_n=None, side_n=None, model=1,
                 sub_model=None, super_model=None, side_model=None,
-                search=False, concurrency=5, v=True, viz=True):
+                search="auto", concurrency=5, v=True, viz=True):
     """
     Fan out a prompt in all three directions and visualize the tree.
 
@@ -402,6 +408,8 @@ def prompt_tree(prompt, sub_n=None, super_n=None, side_n=None, model=1,
         dict with keys: prompt, sub, super, side (present only if requested,
         each containing ALL nodes across all depths), graph (graphviz.Digraph, if viz=True)
     """
+    search = _resolve_search_auto(search, model, v=v)
+
     directions = []
     if sub_n is not None:
         directions.append(("sub", sub_n, sub_model or model))
@@ -451,6 +459,61 @@ def _prompt_to_dirname(prompt, max_len=60):
     return slug or "research"
 
 
+def _title_to_filename(title, max_len=80):
+    """Convert a title to a filesystem-safe filename, preserving readability."""
+    import re
+    name = title.strip()[:max_len]
+    name = re.sub(r'[<>:"/\\|?*]', '', name)
+    name = name.strip('. ')
+    return name or "untitled"
+
+
+def _unique_path(directory, filename):
+    """Return a unique file path, adding counter suffix if needed."""
+    import os
+    path = os.path.join(directory, filename)
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(filename)
+    i = 2
+    while os.path.exists(path):
+        path = os.path.join(directory, f"{base} {i}{ext}")
+        i += 1
+    return path
+
+
+_RESEARCH_SYSTEM = (
+    "You are a research assistant. Return a JSON object with exactly two keys:\n"
+    '- "title": a concise 2-6 word descriptive title for your response\n'
+    '- "content": your full response in markdown'
+)
+
+
+def _extract_citations(search_annotations):
+    """Extract unique citation URLs from search annotations."""
+    urls = []
+    seen = set()
+    for ann_list in search_annotations:
+        for ann in ann_list:
+            url = getattr(ann, 'url', None) or (ann.get('url') if isinstance(ann, dict) else None)
+            if url and url not in seen:
+                urls.append(url)
+                seen.add(url)
+    return urls
+
+
+def _resolve_search_auto(search, model, v=True):
+    """Resolve search='auto' for a given model. Returns True/False."""
+    if search != "auto":
+        return search
+    probe = LLM(model=model, v=False)
+    if LLM._has_search(probe.model):
+        return True
+    if v:
+        print(f"Search not available for {probe.model}, proceeding without search")
+    return False
+
+
 _DEFAULT_SUB_N = [5, 3]
 _DEFAULT_SUPER_N = [5]
 _DEFAULT_SIDE_N = [3]
@@ -463,7 +526,7 @@ def research_tree(
     sub_model=None, super_model=None, side_model=None,
     output_model=None,
     sub_output_model=None, super_output_model=None, side_output_model=None,
-    search=False, search_tree=False,
+    search="auto", search_tree="auto",
     save=True,
     concurrency=5,
     v=True,
@@ -498,6 +561,11 @@ def research_tree(
         dict with keys: prompt, tree, outputs (list of dicts with prompt/response/direction/depth),
         root_output (response for the original prompt)
     """
+    # Resolve search auto
+    output_model = output_model or prompt_model
+    search = _resolve_search_auto(search, output_model, v=v)
+    search_tree = _resolve_search_auto(search_tree, prompt_model, v=v)
+
     # Build or reuse tree
     if isinstance(prompt, dict) and "prompt" in prompt:
         tree = prompt
@@ -514,8 +582,6 @@ def research_tree(
     # Resolve save path
     if save is True:
         save = _prompt_to_dirname(prompt)
-
-    output_model = output_model or prompt_model
 
     # Collect all prompts to generate responses for
     # Each entry: (prompt_text, direction, depth, node_id, output_model_for_this_node)
@@ -551,18 +617,27 @@ def research_tree(
 
     # Generate responses concurrently
     responses = [None] * len(jobs)
+    titles = [None] * len(jobs)
+    citations_list = [None] * len(jobs)
 
     def _run_job(idx):
         job = jobs[idx]
         llm = LLM(model=job["output_model"], search=search, v=False)
-        return idx, llm.user(job["prompt"]).res()
+        llm.sys(_RESEARCH_SYSTEM)
+        result = llm.user(job["prompt"]).res_json()
+        title = result.get("title", "")
+        content = result.get("content") or llm.last()
+        citations = _extract_citations(llm.search_annotations)
+        return idx, title, content, citations
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = {pool.submit(_run_job, i): i for i in range(len(jobs))}
         done = 0
         for future in as_completed(futures):
-            idx, response = future.result()
+            idx, title, response, citations = future.result()
             responses[idx] = response
+            titles[idx] = title
+            citations_list[idx] = citations
             done += 1
             if v:
                 job = jobs[idx]
@@ -570,16 +645,19 @@ def research_tree(
 
     # Build outputs
     outputs = []
-    for job, response in zip(jobs, responses):
+    for job, response, title, citations in zip(jobs, responses, titles, citations_list):
         entry = {
             "id": job["id"],
             "prompt": job["prompt"],
             "response": response,
+            "title": title,
             "direction": job["direction"],
             "depth": job["depth"],
         }
         if "parent" in job:
             entry["parent"] = job["parent"]
+        if citations:
+            entry["citations"] = citations
         outputs.append(entry)
 
     result = {
@@ -595,6 +673,253 @@ def research_tree(
     return result
 
 
+_FOLLOWUP_SYSTEM = (
+    "You are an expert prompt engineer and conceptual explorer. Your task is to analyze "
+    "an original prompt and its corresponding LLM output, then generate a comprehensive "
+    "set of follow-up prompts across three distinct dimensions. \n\n"
+    "You must return a JSON object with the following keys:\n"
+    '- "subprompts": An array of exactly 5 strings. These are decompositions, diving '
+    "deeper into specific aspects of the original prompt or output.\n"
+    '- "superprompts": An array of exactly 5 strings. These climb upward, expanding the '
+    "context, seeking broader understanding or meta-perspectives.\n"
+    '- "sideprompts": An array of exactly 5 strings. These explore different perspectives, '
+    "alternative scenarios, or parallel paths at the same conceptual level as the original.\n\n"
+    "Important Constraints:\n"
+    '- Ensure none of your generated prompts overlap with or repeat the items listed in the "used_prompts" input.\n'
+    "- Output ONLY valid JSON."
+)
+
+_FOLLOWUP_USER = (
+    "Original Prompt:\n{prompt}\n\n"
+    "LLM Output:\n{llm_output}\n\n"
+    "Used Prompts (Do not repeat these):\n{used_prompts?}"
+)
+
+
+def research_expand(
+    prompt,
+    depth=2,
+    model=1,
+    followup_model=None,
+    search="auto",
+    concurrency=5,
+    save=True,
+    viz=True,
+    v=True,
+):
+    """
+    Recursive research expansion: generate an output, expand into followup prompts
+    across sub/super/side directions, generate outputs for those, and recurse.
+
+    Saves results incrementally as markdown files with YAML frontmatter.
+
+    Args:
+        prompt: Initial research prompt.
+        depth: Recursion depth. 1 = root + one level of followups. 2 = two levels. Defaults to 2.
+        model: Model for generating research outputs. Single value for all depths,
+            or a list where model[i] is used for depth i. Defaults to 1.
+        followup_model: Model for generating followup prompts. None uses a built-in
+            prompt engineer. Can be a model name/int, or an LLM instance with
+            template vars {prompt}, {llm_output}, {used_prompts?}.
+        search: Enable web search for output generation.
+        concurrency: Max parallel API calls. Defaults to 5.
+        save: True to auto-name directory from prompt, string for explicit path, False to skip.
+        viz: Generate tree visualization (requires graphviz).
+        v: Verbose output.
+
+    Returns:
+        dict with keys: prompt, root_output, outputs (list of node dicts),
+        graph (graphviz Digraph if viz), saved (file paths if save).
+    """
+    import os
+    from .utils import _write_md
+
+    # Resolve search auto
+    search = _resolve_search_auto(search, model if not isinstance(model, list) else model[0], v=v)
+
+    # Resolve save path
+    if save is True:
+        save = _prompt_to_dirname(prompt)
+
+    if save:
+        os.makedirs(save, exist_ok=True)
+
+    # Resolve model list
+    model_list = model if isinstance(model, list) else [model]
+
+    # Build followup LLM
+    if isinstance(followup_model, LLM):
+        fup_llm = followup_model
+    else:
+        fup_llm = LLM(model=followup_model or 1, reasoning=True, v=False)
+        fup_llm.sys(_FOLLOWUP_SYSTEM).user(_FOLLOWUP_USER)
+
+    all_edges = []
+    used_prompts = set()
+    outputs = []
+    saved_paths = []
+    counter = 0
+
+    def _model_for_depth(d):
+        return model_list[min(max(0, d), len(model_list) - 1)]
+
+    def _save_node(node):
+        if not save:
+            return
+        meta = {
+            "id": node["id"],
+            "title": node.get("title", ""),
+            "prompt": node["prompt"],
+            "direction": node["direction"],
+            "depth": node["depth"],
+        }
+        if "parent" in node:
+            meta["parent"] = node["parent"]
+        if "model" in node:
+            meta["model"] = node["model"]
+        if node.get("citations"):
+            meta["citations"] = node["citations"]
+        title = node.get("title", "")
+        if title:
+            filename = f"{_title_to_filename(title)}.md"
+        else:
+            filename = f"{node['id']}.md"
+        path = _unique_path(save, filename)
+        _write_md(path, node["response"], meta)
+        saved_paths.append(path)
+
+    root_model = _model_for_depth(0)
+    if v:
+        print(f"Generating root output with model={root_model}...")
+    root_llm = LLM(model=root_model, search=search, v=False)
+    root_llm.sys(_RESEARCH_SYSTEM)
+    root_result = root_llm.user(prompt).res_json()
+    root_title = root_result.get("title", "")
+    root_response = root_result.get("content") or root_llm.last()
+    root_citations = _extract_citations(root_llm.search_annotations)
+    used_prompts.add(prompt)
+
+    root_node = {
+        "id": "root", "prompt": prompt, "response": root_response,
+        "title": root_title,
+        "direction": "root", "depth": -1, "model": str(root_model),
+    }
+    if root_citations:
+        root_node["citations"] = root_citations
+    outputs.append(root_node)
+    _save_node(root_node)
+
+    if v:
+        print(f"  root: {prompt[:70]}{'...' if len(prompt) > 70 else ''}")
+
+    pending = [root_node]
+
+    for d in range(depth):
+        if not pending:
+            break
+
+        output_model = _model_for_depth(d)
+
+        if v:
+            print(f"\n[Depth {d}] Expanding {len(pending)} node(s), generating followups...")
+
+        followup_results = [None] * len(pending)
+        used_str = "\n".join(used_prompts) if used_prompts else ""
+
+        def _gen_followup(idx, node):
+            clone = fup_llm._clone_for_batch()
+            result = clone.run(prompt=node["prompt"], llm_output=node["response"], used_prompts=used_str)
+            return idx, result
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_gen_followup, i, node): i for i, node in enumerate(pending)}
+            for future in as_completed(futures):
+                idx, result = future.result()
+                followup_results[idx] = result
+
+        new_children = []
+        for parent_node, followups in zip(pending, followup_results):
+            if not followups:
+                continue
+            for direction in ("sub", "super", "side"):
+                prompts_list = followups.get(f"{direction}prompts", [])
+                for fp in prompts_list:
+                    if fp in used_prompts:
+                        continue
+                    node_id = f"{direction}_{counter}"
+                    counter += 1
+                    used_prompts.add(fp)
+                    child = {
+                        "id": node_id, "prompt": fp, "response": None,
+                        "direction": direction, "depth": d,
+                        "parent": parent_node["prompt"], "parent_id": parent_node["id"],
+                        "model": str(output_model),
+                    }
+                    new_children.append(child)
+                    all_edges.append((parent_node["id"], node_id))
+
+        if v:
+            print(f"[Depth {d}] Generated {len(new_children)} followup prompts, generating outputs with model={output_model}...")
+
+        output_llm = LLM(model=output_model, search=search, v=False)
+        output_llm.sys(_RESEARCH_SYSTEM)
+
+        def _gen_output(idx, child):
+            llm = output_llm._clone_for_batch()
+            result = llm.user(child["prompt"]).res_json()
+            title = result.get("title", "")
+            content = result.get("content") or llm.last()
+            citations = _extract_citations(llm.search_annotations)
+            return idx, title, content, citations
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_gen_output, i, child): i for i, child in enumerate(new_children)}
+            done = 0
+            for future in as_completed(futures):
+                idx, title, response, citations = future.result()
+                new_children[idx]["response"] = response
+                new_children[idx]["title"] = title
+                if citations:
+                    new_children[idx]["citations"] = citations
+                _save_node(new_children[idx])
+                done += 1
+                if v:
+                    child = new_children[idx]
+                    print(f"  [{done}/{len(new_children)}] {child['id']}: {child['prompt'][:70]}{'...' if len(child['prompt']) > 70 else ''}")
+
+        outputs.extend(new_children)
+        pending = new_children
+
+    graph = None
+    if viz and all_edges:
+        all_nodes = [
+            {"id": n["id"], "prompt": n["prompt"], "depth": n["depth"], "direction": n["direction"]}
+            for n in outputs if n["id"] != "root"
+        ]
+        graph = _build_graph(prompt, all_nodes, all_edges)
+        if save:
+            graph_path = os.path.join(save, "tree")
+            graph.render(graph_path, cleanup=True)
+            saved_paths.append(f"{graph_path}.svg")
+
+    result = {
+        "prompt": prompt,
+        "root_output": root_response,
+        "outputs": outputs,
+    }
+    if graph:
+        result["graph"] = graph
+    if save:
+        result["saved"] = saved_paths
+
+    if v:
+        print(f"\nDone! {len(outputs)} total nodes across {depth} depth levels.")
+        if save:
+            print(f"Saved to: {save}/")
+
+    return result
+
+
 def _save_research(result, save_dir):
     from .utils import _write_md
     import os
@@ -603,12 +928,24 @@ def _save_research(result, save_dir):
     saved = []
 
     for entry in result["outputs"]:
-        meta = {"prompt": entry["prompt"], "direction": entry["direction"], "depth": entry["depth"]}
+        meta = {
+            "id": entry["id"],
+            "title": entry.get("title", ""),
+            "prompt": entry["prompt"],
+            "direction": entry["direction"],
+            "depth": entry["depth"],
+        }
         if "parent" in entry:
             meta["parent"] = entry["parent"]
+        if entry.get("citations"):
+            meta["citations"] = entry["citations"]
 
-        filename = f"{entry['id']}.md"
-        path = os.path.join(save_dir, filename)
+        title = entry.get("title", "")
+        if title:
+            filename = f"{_title_to_filename(title)}.md"
+        else:
+            filename = f"{entry['id']}.md"
+        path = _unique_path(save_dir, filename)
         _write_md(path, entry["response"], meta)
         saved.append(path)
 

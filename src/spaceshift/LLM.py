@@ -219,7 +219,12 @@ class LLM:
             self.reasoning_enabled = reasoning
         if not getattr(self, 'reasoning_effort', None):
             self.reasoning_effort = reasoning_effort
-        if self.search_enabled:
+        if self.search_enabled == "auto":
+            if self._has_search(self.model):
+                self.search_enabled = True
+            else:
+                self.search_enabled = False
+        elif self.search_enabled:
             if not self._has_search(self.model):
                 self._update_model_to_search()
         if self.reasoning_enabled:
@@ -388,7 +393,15 @@ class LLM:
             tool_choice = {"type": "function", "function": {"name": tool_choice.__name__}}
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
-        if search:
+        if search == "auto":
+            if self._has_search(self.model):
+                self.search_enabled = True
+                self.temperature = None
+            else:
+                self.search_enabled = False
+            if search_context_size:
+                self.search_context_size = search_context_size
+        elif search:
             if not self._has_search(self.model):
                 self._update_model_to_search()
             self.search_enabled = True
@@ -909,7 +922,7 @@ class LLM:
             "model": args['model'],
             "input": input_messages,
             "tools": [{"type": "web_search", "search_context_size": self.search_context_size}],
-            "tool_choice": "required",
+            "tool_choice": "auto",
         }
         if args['temperature'] is not None:
             resp_args["temperature"] = args['temperature']
@@ -922,13 +935,16 @@ class LLM:
         resp = responses(**resp_args)
         self.response_metadatas.append(resp)
 
-        # Extract text from the Responses API output
+        # Extract text and citations from the Responses API output
         output_text = ""
         for output_item in resp.output:
             if hasattr(output_item, 'content'):
                 for content_item in output_item.content:
                     if hasattr(content_item, 'text'):
                         output_text += content_item.text
+                    annotations = getattr(content_item, 'annotations', None)
+                    if annotations:
+                        self.search_annotations.append(annotations)
 
         self.asst(output_text, merge=False)
         self._track_cost_responses(resp, args['model'])
@@ -1572,7 +1588,8 @@ class LLM:
         except (TypeError, IndexError, AttributeError):
             pass
     
-    def _has_search(self, model):
+    @staticmethod
+    def _has_search(model):
         if model in _WEB_SEARCH_OVERRIDES:
             return True
         return litellm.supports_web_search(model=model) == True

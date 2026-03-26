@@ -8,6 +8,7 @@ Every tool in spaceshift supports saving structured markdown with YAML frontmatt
 ```python
 compare_models("Explain dark matter", save="dark_matter")
 research_tree("Effects of AI on education", save="ai_education")
+research_expand("Effects of AI on education", save="ai_education_deep")
 grid_search("Explain gravity", save="gravity_grid")
 ```
 
@@ -15,9 +16,11 @@ grid_search("Explain gravity", save="gravity_grid")
 
 - The `save=` pattern: how it works across all tools
 - YAML frontmatter structure: what metadata is included
+- Titled filenames: `research_tree` and `research_expand` save files by their LLM-generated title instead of node IDs
+- Citation URLs in frontmatter: when web search is active, source URLs are saved as a YAML list
 - `.to_md()` — export any conversation to markdown
 - File naming conventions for ranked output
-- Directory structure for multi-file output (research_tree, grid_search)
-- Frontmatter fields: model, timestamp, scores, transform, etc.
+- Directory structure for multi-file output (research_tree, research_expand, grid_search)
+- Frontmatter fields: id, title, prompt, direction, depth, parent, model, citations, scores, transform, etc.
 - Using saved output for further analysis
 - Browsing output with `spaceshift view` — see [Viewer](/reference/viewer/)

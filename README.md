@@ -26,12 +26,31 @@ result = research_tree(
     sub_n=[5, 3],      # 5 subtopics, each split into 3 more
     super_n=[5],        # 5 broader framings
     side_n=[3],         # 3 lateral perspectives
-    search=True,        # web search for current information
 )
 
 print(result["root_output"])       # Response to the original question
 print(len(result["outputs"]))     # Responses for every node in the tree
 # All saved to markdown files with metadata + tree.svg visualization
+```
+
+---
+
+### Research Expand
+
+Recursive research expansion. Generates an output, expands into followup prompts across sub/super/side directions, generates outputs for those, and recurses to arbitrary depth.
+
+```python
+from spaceshift import research_expand
+
+result = research_expand(
+    "What are the second-order effects of AI on labor markets?",
+    depth=2,            # root + 2 levels of followup expansion
+    model=[1, 2],       # model 1 for depth 0, model 2 for depth 1+
+)
+
+print(result["root_output"])       # Response to the original question
+print(len(result["outputs"]))     # All nodes across the expansion tree
+# Each node saved as a titled markdown file with citations
 ```
 
 ---

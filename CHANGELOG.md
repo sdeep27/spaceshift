@@ -9,6 +9,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-26
+
+### Added
+- **`research_expand()`**: Recursive research expansion — generate an output, expand into followup prompts across sub/super/side directions, generate outputs for those, and recurse to arbitrary depth
+  - Per-depth model selection: `model=[1, 2]` uses model 1 for depth 0, model 2 for depth 1+
+  - Custom followup generation via `followup_model=` — pass a model name or a pre-configured `LLM` instance with template variables
+  - Incremental file saving with human-readable titles as filenames
+  - Citation extraction from web search results
+  - Deduplication of followup prompts across the full expansion tree
+- **Titled research outputs**: `research_tree` and `research_expand` now generate a title for each output, used as the saved filename instead of node IDs
+- **Citation tracking**: Web search citations are extracted and saved in YAML frontmatter as a list of URLs
+
+### Changed
+- **`search="auto"` is the new default**: All prompt space functions (`subprompt`, `superprompt`, `sideprompt`, `prompt_tree`, `research_tree`, `research_expand`) now auto-detect whether the model supports web search and enable it if available — no need to pass `search=True` explicitly
+- **Search Responses API uses `tool_choice="auto"`**: The model now decides when to search rather than being forced to, producing more natural outputs
+- **YAML frontmatter handles lists**: Markdown output now correctly serializes list values (e.g., citations) as proper YAML arrays
+- `LLM._has_search()` is now a static method
+
+---
+
 ## [0.9.0] - 2026-02-15
 
 ### Changed
