@@ -212,6 +212,9 @@ class LLM:
         self.schemas = None
         self.tool_choice = "auto"
         self.parallel_tool_calls = True
+        self.max_turns = None
+        self.stop_tool_enabled = False
+        self._downgrade_to_auto = False
         self.fn_map = None
         self.search_enabled = search
         self.search_context_size = search_context_size
@@ -350,7 +353,27 @@ class LLM:
             "total_cost": total_cost,
         })
 
-    def tools(self, fns = [], tool_choice="auto", parallel_tool_calls=True, search=False, search_context_size=None, reasoning=False, reasoning_effort=None) -> LLM:
+    _DONE_TOOL_SCHEMA = {
+        "type": "function",
+        "function": {
+            "name": "done",
+            "description": "Call this when you have completed the task. Pass your final answer/response.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                        "description": "Your final response to the user's request."
+                    }
+                },
+                "required": ["answer"],
+                "additionalProperties": False
+            }
+        }
+    }
+
+    def tools(self, fns = [], tool_choice="auto", parallel_tool_calls=True, max_turns=None, stop_tool=False, search=False, search_context_size=None, reasoning=False, reasoning_effort=None) -> LLM:
         """
         Register tools (functions) or enable capabilities like Web Search or Reasoning.
         Automatically generates JSON schemas from the provided Python functions.
@@ -360,12 +383,19 @@ class LLM:
                 are recommended on the functions for accurate schema generation.
             tool_choice: Controls how the model selects tools. Accepts:
                 - "auto" (default): model decides whether to call a tool
-                - "required": model must call at least one tool
+                - "required": model must call at least one tool on every turn
+                - "required_then_auto": force first tool call, then switch to auto
                 - "none": model must not call any tools
                 - A callable (function reference): forces the model to call that specific function.
                   e.g. tool_choice=get_weather
             parallel_tool_calls (bool): Allow the model to call multiple tools in parallel.
                 Defaults to True.
+            max_turns (int, optional): Maximum number of tool-call rounds before forcing a
+                text response. When hit, tools are stripped and the model must produce text.
+                None (default) means no limit.
+            stop_tool (bool): If True, injects a "done" tool that the model can call to
+                signal task completion. Pairs well with tool_choice="required" — the model
+                must always call a tool, but calling done() exits the loop.
             search (bool): Enable web search. If the current model doesn't support it,
                 attempts to switch to a supported model.
             search_context_size (str, optional): "short", "medium", "long".
@@ -388,9 +418,18 @@ class LLM:
             tool["function"]["strict"] = True
             tool["function"]["parameters"]["additionalProperties"] = False
             tools.append(tool)
+        if stop_tool:
+            tools.append(self._DONE_TOOL_SCHEMA)
         self.available_tools = tools
+        self.stop_tool_enabled = stop_tool
+        self.max_turns = max_turns
         if callable(tool_choice):
             tool_choice = {"type": "function", "function": {"name": tool_choice.__name__}}
+        elif tool_choice == "required_then_auto":
+            tool_choice = "required"
+            self._downgrade_to_auto = True
+        else:
+            self._downgrade_to_auto = False
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         if search == "auto":
@@ -648,6 +687,9 @@ class LLM:
         clone.schemas = self.schemas
         clone.tool_choice = self.tool_choice
         clone.parallel_tool_calls = self.parallel_tool_calls
+        clone.max_turns = self.max_turns
+        clone.stop_tool_enabled = self.stop_tool_enabled
+        clone._downgrade_to_auto = self._downgrade_to_auto
         clone.fn_map = self.fn_map
         clone.search_enabled = self.search_enabled
         clone.search_context_size = self.search_context_size
@@ -1050,16 +1092,36 @@ class LLM:
                 actual_model = comp.model or args['model']
                 print(f"ASSISTANT ({actual_model}):")
             # Tool loop
+            tool_round = 0
+            _stop_answer = None
             while self._requests_tool(asst_msg):
-                self._execute_tools(asst_msg)
+                tool_round += 1
+                _stop_answer = self._execute_tools(asst_msg)
+                if _stop_answer is not None:
+                    break
+                # required_then_auto: downgrade after first tool execution
+                if self._downgrade_to_auto and chat_args.get("tool_choice") == "required":
+                    chat_args["tool_choice"] = "auto"
+                # max_turns: strip tools and force text response
+                if self.max_turns is not None and tool_round >= self.max_turns:
+                    if args['v']: print(f"Max tool turns ({self.max_turns}) reached, forcing text response.\n")
+                    stripped = {k: v for k, v in chat_args.items()
+                                if k not in ("tools", "tool_choice", "parallel_tool_calls")}
+                    comp = completion(**stripped)
+                    self.response_metadatas.append(comp)
+                    self._track_cost(comp, args['model'])
+                    asst_msg = comp.choices[0].message
+                    break
                 comp = completion(**chat_args)
                 self.response_metadatas.append(comp)
                 self._track_cost(comp, args['model'])
                 asst_msg = comp.choices[0].message
             # Final text response
-            self.asst(asst_msg.content, merge=False)
-            self._track_cost(comp, args['model'])
-            if args['v']: print(f"{asst_msg.content}\n")
+            final_text = _stop_answer if _stop_answer is not None else asst_msg.content
+            self.asst(final_text, merge=False)
+            if _stop_answer is None:
+                self._track_cost(comp, args['model'])
+            if args['v']: print(f"{final_text}\n")
         
         if self.prompt_queue and self.prompt_queue_remaining > 0:
             prompt_queue_index = len(self.prompt_queue) - self.prompt_queue_remaining
@@ -1068,7 +1130,12 @@ class LLM:
             self._run_prediction(jsn_mode, **kwargs)
 
     def _execute_tools(self, asst_msg):
-        """Execute all tool calls, append results to history"""
+        """Execute all tool calls, append results to history.
+
+        Returns:
+            str or None: If the done() stop tool was called, returns the answer string.
+                Otherwise returns None.
+        """
         self.chat_msgs.append(asst_msg.to_dict())
 
         for tool_call in asst_msg.tool_calls:
@@ -1078,6 +1145,11 @@ class LLM:
                 continue
             arguments_str = tool_call.function.arguments
             args = json.loads(arguments_str) if arguments_str and arguments_str.strip() not in ("", "null", "{}") else None
+            # Stop tool: model signals completion
+            if name == 'done' and self.stop_tool_enabled:
+                answer = args.get("answer", "") if args else ""
+                if self.v: print(f'Stop tool called. Final answer received.\n')
+                return answer
             if self.v: print(f'Found Tool {name} {args}.')
             result = self.fn_map[name](**args) if args else self.fn_map[name]()
             if self.v: print('Executed Tool. Result:', result,"\n")
@@ -1087,6 +1159,7 @@ class LLM:
                 "tool_call_id": tool_call.id,
                 "content": str(result),
             })
+        return None
    
     _SERVER_HANDLED_TOOLS = frozenset(('web_search',))
 
@@ -1727,6 +1800,8 @@ class LLM:
             "v": self.v,
             "tool_choice": self.tool_choice,
             "parallel_tool_calls": self.parallel_tool_calls,
+            "max_turns": self.max_turns,
+            "stop_tool_enabled": self.stop_tool_enabled,
             "search_enabled": self.search_enabled,
             "search_context_size": self.search_context_size,
             "reasoning_enabled": self.reasoning_enabled,
@@ -1803,6 +1878,10 @@ class LLM:
             llm.tool_choice = state["tool_choice"]
         if "parallel_tool_calls" in state:
             llm.parallel_tool_calls = state["parallel_tool_calls"]
+        if "max_turns" in state:
+            llm.max_turns = state["max_turns"]
+        if "stop_tool_enabled" in state:
+            llm.stop_tool_enabled = state["stop_tool_enabled"]
         if "search_enabled" in state:
             llm.search_enabled = state["search_enabled"]
         if "reasoning_enabled" in state:
