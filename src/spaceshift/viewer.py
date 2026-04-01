@@ -74,6 +74,8 @@ _HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>spaceshift viewer</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; height: 100vh; background: #fff; color: #1a1a1a; }
@@ -234,6 +236,27 @@ async function loadFile(path, el) {
   }
   html += '<div class="md-body">' + marked.parse(data.body) + '</div>';
   content.innerHTML = html;
+  renderMath(content);
+}
+
+function renderMath(el) {
+  // Block math: $$...$$
+  el.querySelectorAll('p, div, li').forEach(node => {
+    if (!node.innerHTML.includes('$$')) return;
+    node.innerHTML = node.innerHTML.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => {
+      try { return katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false }); }
+      catch(e) { return '$$' + tex + '$$'; }
+    });
+  });
+  // Inline math: $...$  (not inside code/pre)
+  el.querySelectorAll('p, li, td, th, span, em, strong').forEach(node => {
+    if (!node.innerHTML.includes('$')) return;
+    if (node.closest('pre') || node.closest('code')) return;
+    node.innerHTML = node.innerHTML.replace(/\$([^\$\n]+?)\$/g, (_, tex) => {
+      try { return katex.renderToString(tex.trim(), { displayMode: false, throwOnError: false }); }
+      catch(e) { return '$' + tex + '$'; }
+    });
+  });
 }
 
 function escHtml(s) {

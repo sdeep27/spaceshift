@@ -1055,12 +1055,11 @@ class LLM:
                 # required_then_auto: downgrade after first tool execution
                 if self._downgrade_to_auto and chat_args.get("tool_choice") == "required":
                     chat_args["tool_choice"] = "auto"
-                # max_turns: strip tools and force text response
+                # max_turns: prevent further tool calls, force text response
                 if self.max_turns is not None and tool_round >= self.max_turns:
                     if args['v']: print(f"Max tool turns ({self.max_turns}) reached, forcing text response.\n")
-                    stripped = {k: v for k, v in chat_args.items()
-                                if k not in ("tools", "tool_choice", "parallel_tool_calls")}
-                    comp = completion(**stripped)
+                    forced = {**chat_args, "tool_choice": "none"}
+                    comp = completion(**forced)
                     self.response_metadatas.append(comp)
                     self._track_cost(comp, args['model'])
                     asst_msg = comp.choices[0].message
@@ -1093,25 +1092,73 @@ class LLM:
 
         for tool_call in asst_msg.tool_calls:
             name = tool_call.function.name
-            if name == 'web_search':
+
+            if name in self._SERVER_HANDLED_TOOLS:
                 if self.v: print(f'Skipping server-handled tool: {name}')
+                self.chat_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": "Handled by server.",
+                })
                 continue
+
             arguments_str = tool_call.function.arguments
-            args = json.loads(arguments_str) if arguments_str and arguments_str.strip() not in ("", "null", "{}") else None
-            # Stop tool: model signals completion
+            try:
+                args = json.loads(arguments_str) if arguments_str and arguments_str.strip() not in ("", "null", "{}") else None
+            except (json.JSONDecodeError, TypeError) as e:
+                if self.v: print(f'Failed to parse tool arguments: {e}\n')
+                self.chat_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"Error: Failed to parse tool arguments: {e}",
+                })
+                continue
+
             if name == 'done' and self.stop_tool_enabled:
                 answer = args.get("answer", "") if args else ""
                 if self.v: print(f'Stop tool called. Final answer received.\n')
+                self.chat_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": answer,
+                })
                 return answer
+
+            if name not in self.fn_map:
+                if self.v: print(f'Tool "{name}" not found.\n')
+                self.chat_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f'Error: Tool "{name}" not found.',
+                })
+                continue
+
             if self.v: print(f'Found Tool {name} {args}.')
-            result = self.fn_map[name](**args) if args else self.fn_map[name]()
-            if self.v: print('Executed Tool. Result:', result,"\n")
+            try:
+                result = self.fn_map[name](**args) if args else self.fn_map[name]()
+            except Exception as e:
+                if self.v: print(f'Tool execution error: {e}\n')
+                self.chat_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"Error: Tool execution failed: {e}",
+                })
+                continue
+            if self.v: print('Executed Tool. Result:', result, "\n")
+
+            if result is None:
+                content = ""
+            elif isinstance(result, (dict, list)):
+                content = json.dumps(result)
+            else:
+                content = str(result)
 
             self.chat_msgs.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": str(result),
+                "content": content,
             })
+
         return None
    
     _SERVER_HANDLED_TOOLS = frozenset(('web_search',))

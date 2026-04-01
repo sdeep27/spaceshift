@@ -28,6 +28,8 @@ dependencies = [
     "python-dotenv",
     "function-schema",
     "rapidfuzz",
+    "rich",
+    "questionary",
 ]
 
 [project.optional-dependencies]

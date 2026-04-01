@@ -561,7 +561,7 @@ def research_tree(
             done += 1
             if v:
                 job = jobs[idx]
-                print(f"  [{done}/{len(jobs)}] {job['id']}: {job['prompt'][:70]}{'...' if len(job['prompt']) > 70 else ''}")
+                print(f"  [{done}/{len(jobs)}] {job['prompt'][:80]}{'...' if len(job['prompt']) > 80 else ''}")
 
     # Build outputs
     outputs = []
@@ -805,7 +805,7 @@ def research_expand(
                 done += 1
                 if v:
                     child = new_children[idx]
-                    print(f"  [{done}/{len(new_children)}] {child['id']}: {child['prompt'][:70]}{'...' if len(child['prompt']) > 70 else ''}")
+                    print(f"  [{done}/{len(new_children)}] {child['prompt'][:80]}{'...' if len(child['prompt']) > 80 else ''}")
 
         outputs.extend(new_children)
         pending = new_children
