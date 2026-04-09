@@ -443,6 +443,24 @@ def _post_process_research(output_dir, model, verbose=True):
     console.print("[bold green]✓ Post-processing complete[/bold green]")
 
 
+def _run_agent(prompt, model, save_dir, no_view):
+    """Execute the autonomous research agent."""
+    from rich.console import Console
+    from .research_agent import research_agent
+
+    console = Console()
+    console.print(f"\n[bold]Starting research agent...[/bold]\n")
+
+    result = research_agent(prompt, model=model, save=save_dir or True, v=True)
+
+    output_dir = result.get("output_dir")
+    if output_dir:
+        console.print(f"\n[dim]Output: {output_dir}/[/dim]")
+    if not no_view and output_dir:
+        console.print(f"\n[bold]Opening viewer...[/bold]\n")
+        view(output_dir)
+
+
 def _interactive_main():
     """Interactive mode — shown when user runs `spaceshift` with no args."""
     import questionary
@@ -522,6 +540,13 @@ def main():
     s.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Uses rank 1 if omitted.")
     s.add_argument("--view", action="store_true", help="Open viewer after synthesis")
 
+    # agent subcommand (dev/testing — not in interactive menu)
+    a = sub.add_parser("agent", help="Run autonomous research agent on a topic")
+    a.add_argument("prompt", help="Research topic or question")
+    a.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Interactive picker if omitted.")
+    a.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
+    a.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
+
     args = parser.parse_args()
 
     if args.command == "view":
@@ -533,6 +558,12 @@ def main():
         if model is None:
             raise SystemExit(0)
         _run_research(args.prompt, model, args.save, args.no_view)
+    elif args.command == "agent":
+        _ensure_api_keys()
+        model = _select_model(args.model)
+        if model is None:
+            raise SystemExit(0)
+        _run_agent(args.prompt, model, args.save, args.no_view)
     elif args.command == "synthesize":
         # Ensure API keys before running synthesis
         _ensure_api_keys()
