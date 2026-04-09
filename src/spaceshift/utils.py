@@ -24,6 +24,65 @@ def _write_md(path, content, meta=None):
     return path
 
 
+def _write_consolidated_md(path, original_prompt, transforms, prompts,
+                           manipulation_model, output_model=None, responses=None):
+    """Write a single consolidated markdown file for prompt manipulation results."""
+    from datetime import datetime
+
+    if not path.endswith(".md"):
+        path += ".md"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    has_outputs = responses is not None
+
+    # Build frontmatter
+    meta = {
+        "original_prompt": original_prompt,
+        "manipulation_model": manipulation_model,
+    }
+    if has_outputs:
+        meta["output_model"] = output_model
+    meta["transforms"] = transforms
+    meta["generated_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    lines = []
+
+    # Header
+    lines.append("# Prompt Manipulations\n")
+    lines.append(f"**Original prompt:** {original_prompt}\n")
+    lines.append(f"**Manipulation model:** {manipulation_model}  ")
+    if has_outputs:
+        lines.append(f"**Output model:** {output_model}")
+    lines.append("")
+
+    # Table of contents
+    lines.append("## Table of Contents\n")
+    for name in transforms:
+        lines.append(f"- [{name}](#{name})")
+    lines.append("")
+
+    # Sections
+    for i, (name, prompt_text) in enumerate(zip(transforms, prompts)):
+        lines.append("---\n")
+        lines.append(f"## {name}\n")
+
+        if has_outputs:
+            lines.append("### Prompt\n")
+
+        # Blockquote the transformed prompt
+        for pline in prompt_text.splitlines():
+            lines.append(f"> {pline}" if pline.strip() else ">")
+        lines.append("")
+
+        if has_outputs and i < len(responses):
+            lines.append("### Output\n")
+            lines.append(responses[i])
+            lines.append("")
+
+    content = "\n".join(lines)
+    return _write_md(path, content, meta)
+
+
 def _dict_to_md(result, path):
     """Handle dict results from compare_models, prompt_probe, or language_transform."""
     # language_transform shape: has output_response but no responses list

@@ -461,6 +461,99 @@ def _run_agent(prompt, model, save_dir, no_view):
         view(output_dir)
 
 
+def _prompt_to_slug(prompt, max_len=40):
+    """Convert a prompt to a filesystem-safe slug for directory naming."""
+    import re
+    slug = re.sub(r'[^\w\s-]', '', prompt.lower().strip())
+    slug = re.sub(r'[\s_]+', '_', slug)
+    return slug[:max_len].rstrip('_')
+
+
+def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
+                           save_dir=None, concurrency=5):
+    """Execute the prompt manipulation pipeline."""
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from rich.console import Console
+    from .prompt_probe import prompt_transform, list_transforms
+    from .utils import _write_consolidated_md
+
+    console = Console()
+
+    # Resolve transforms
+    if transforms is None:
+        transforms = list_transforms(v=False)
+
+    if not transforms:
+        console.print("[yellow]No transforms selected.[/yellow]")
+        return
+
+    console.print(f"\n[bold]Running {len(transforms)} transforms...[/bold]")
+    console.print(f"  [dim]Manipulation model: {model}[/dim]")
+    if output_model:
+        console.print(f"  [dim]Output model: {output_model}[/dim]")
+
+    # Phase 1: Run transforms concurrently
+    transformed_prompts = [None] * len(transforms)
+    failed = []
+
+    def _run_single(idx, name):
+        return idx, name, prompt_transform(prompt, name, model=model)
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = {
+            executor.submit(_run_single, i, name): i
+            for i, name in enumerate(transforms)
+        }
+        done_count = 0
+        for future in as_completed(futures):
+            try:
+                idx, name, result = future.result()
+                transformed_prompts[idx] = result
+                done_count += 1
+                console.print(f"  [{done_count}/{len(transforms)}] [green]{name}[/green]")
+            except Exception as e:
+                idx = futures[future]
+                failed.append((transforms[idx], str(e)))
+                done_count += 1
+                console.print(f"  [{done_count}/{len(transforms)}] [red]{transforms[idx]} — failed: {e}[/red]")
+
+    # Remove failed transforms
+    if failed:
+        good_indices = [i for i in range(len(transforms)) if transformed_prompts[i] is not None]
+        transforms = [transforms[i] for i in good_indices]
+        transformed_prompts = [transformed_prompts[i] for i in good_indices]
+        console.print(f"\n[yellow]{len(failed)} transform(s) failed, continuing with {len(transforms)}[/yellow]")
+
+    if not transforms:
+        console.print("[red]All transforms failed.[/red]")
+        return
+
+    # Phase 2: Generate outputs if requested
+    responses = None
+    if output_model:
+        console.print(f"\n[bold]Generating {len(transforms)} outputs with {output_model}...[/bold]")
+        from .LLM import LLM
+        llm = LLM(model=output_model, v=False)
+        responses = llm.result_batch(transformed_prompts, concurrency=concurrency)
+
+    # Resolve save path
+    if not save_dir:
+        save_dir = os.path.join("output", _prompt_to_slug(prompt))
+
+    output_path = os.path.join(save_dir, "manipulations.md")
+
+    saved = _write_consolidated_md(
+        output_path, prompt, transforms, transformed_prompts,
+        manipulation_model=model, output_model=output_model, responses=responses,
+    )
+
+    console.print(f"\n[bold green]Done! {len(transforms)} transforms applied.[/bold green]")
+    console.print(f"[dim]Saved to: {saved}[/dim]")
+
+
 def _interactive_main():
     """Interactive mode — shown when user runs `spaceshift` with no args."""
     import questionary
@@ -503,6 +596,60 @@ def _interactive_main():
             if model is None:
                 continue
             _run_research(prompt.strip(), model, save_dir=None, no_view=False)
+            break
+        elif mode == "prompt":
+            prompt = questionary.text(
+                "Enter your prompt:",
+                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+            ).ask()
+            if prompt is None:
+                continue
+
+            from .prompt_probe import list_transforms
+            all_transforms = list_transforms(v=False)
+            selected = questionary.checkbox(
+                "Select transforms to apply:",
+                choices=[questionary.Choice(name, checked=True) for name in all_transforms],
+            ).ask()
+            if selected is None:
+                continue
+            if not selected:
+                console.print("[yellow]No transforms selected.[/yellow]\n")
+                continue
+
+            console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
+            model = _select_model(None)
+            if model is None:
+                continue
+
+            generate_outputs = questionary.confirm(
+                "Generate outputs too?",
+                default=False,
+            ).ask()
+            if generate_outputs is None:
+                continue
+
+            output_model = None
+            if generate_outputs:
+                console.print("\n[bold]Select output model[/bold] (for generating responses):")
+                output_model = _select_model(None)
+                if output_model is None:
+                    continue
+
+            default_dir = os.path.join("output", _prompt_to_slug(prompt))
+            save_dir = questionary.text(
+                "Output folder:",
+                default=default_dir,
+            ).ask()
+            if save_dir is None:
+                continue
+
+            _run_prompt_manipulate(
+                prompt.strip(), model,
+                transforms=selected,
+                output_model=output_model,
+                save_dir=save_dir.strip(),
+            )
             break
         elif mode == "keys":
             _manage_api_keys(first_time=False)
@@ -547,6 +694,14 @@ def main():
     a.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
     a.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
 
+    # manipulate subcommand
+    m = sub.add_parser("manipulate", help="Apply prompt transforms and optionally generate outputs")
+    m.add_argument("prompt", help="The prompt to manipulate")
+    m.add_argument("--model", "-m", default=None, help="Model for prompt transforms (name, shorthand, or rank). Interactive picker if omitted.")
+    m.add_argument("--output-model", default=None, help="Model for generating outputs. Omit to skip output generation.")
+    m.add_argument("--transforms", "-t", nargs="+", default=None, help="Transform names to apply (default: all). Use '--transforms list' to see available.")
+    m.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
+
     args = parser.parse_args()
 
     if args.command == "view":
@@ -573,6 +728,30 @@ def main():
         _post_process_research(args.directory, model, verbose=True)
         if args.view:
             view(args.directory)
+    elif args.command == "manipulate":
+        # Handle --transforms list
+        if args.transforms and args.transforms == ["list"]:
+            from .prompt_probe import list_transforms
+            list_transforms(v=True)
+            raise SystemExit(0)
+
+        _ensure_api_keys()
+        model = _select_model(args.model)
+        if model is None:
+            raise SystemExit(0)
+
+        output_model = None
+        if args.output_model:
+            output_model = _select_model(args.output_model)
+            if output_model is None:
+                raise SystemExit(0)
+
+        _run_prompt_manipulate(
+            args.prompt, model,
+            transforms=args.transforms,
+            output_model=output_model,
+            save_dir=args.save,
+        )
     else:
         # Ensure API keys before interactive mode
         _ensure_api_keys()
