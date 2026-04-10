@@ -88,7 +88,8 @@ def grid_search(
     transform_names = [name for name, _ in resolved_transforms]
 
     if v:
-        print(f"Grid: {len(transform_names)} transforms × {len(model_labels)} models = {len(transform_names) * len(model_labels)} cells (+{len(model_labels)} original)")
+        n_total = len(transform_names) * len(model_labels) + len(model_labels)
+        print(f"Grid: {len(transform_names)} transform{'s' if len(transform_names) != 1 else ''} + 1 original × {len(model_labels)} models = {n_total} prompt/model combinations")
         print(f"  Transforms: {transform_names}")
         print(f"  Models: {model_labels}")
 

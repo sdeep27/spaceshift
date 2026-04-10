@@ -276,7 +276,7 @@ def _get_model_choices_by_category(per_category=8):
     return result
 
 
-def _select_model(model_arg):
+def _select_model(model_arg, prompt_text=None):
     """Resolve --model flag or show interactive picker. Returns model string."""
     if model_arg:
         from .LLM import resolve_model
@@ -295,10 +295,6 @@ def _select_model(model_arg):
     from questionary import Separator, Choice
     from rich.console import Console
     console = Console()
-
-    # Show provider info
-    providers = _get_providers()
-    console.print(f"  [dim]{len(providers)} provider(s): {', '.join(providers)}[/dim]\n")
 
     # Build categorized choices
     by_cat = _get_model_choices_by_category()
@@ -320,7 +316,7 @@ def _select_model(model_arg):
     default_model = by_cat[first_cat][0][0]
 
     answer = questionary.select(
-        "Select a model:",
+        prompt_text or "Select a model (use arrow keys):",
         choices=choices,
         default=default_model,
     ).ask()
@@ -676,7 +672,7 @@ def _select_default_compare_models(n=3):
     return selected
 
 
-def _select_compare_models():
+def _select_compare_models(checked_default=True):
     """Interactive multi-select model picker grouped by category. Returns list of model names."""
     import questionary
     from questionary import Choice, Separator
@@ -685,9 +681,9 @@ def _select_compare_models():
 
     from .LLM import model_rankings, _get_model_name, _get_reasoning_effort
 
-    defaults = set(_select_default_compare_models(3))
+    defaults = set(_select_default_compare_models(3)) if checked_default else set()
 
-    categories = ["best", "fast", "cheap", "open"]
+    categories = ["optimal", "best", "fast", "cheap", "open"]
     choices = []
     seen = set()
 
@@ -1188,8 +1184,7 @@ def _interactive_main():
                             eval_model = None
                             step = 4
                 elif step == 3:
-                    console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
-                    eval_model = _select_model(None)
+                    eval_model = _select_model(None, prompt_text="Select a model to judge the evaluation (use arrow keys):")
                     if eval_model is None:
                         step = 2
                     else:
@@ -1229,7 +1224,7 @@ def _interactive_main():
                     else:
                         step = 1
                 elif step == 1:
-                    models = _select_compare_models()
+                    models = _select_compare_models(checked_default=False)
                     if models is None:
                         step = 0
                     else:
@@ -1253,13 +1248,11 @@ def _interactive_main():
                         n_eval_calls = n_pairs * 2
 
                         console.print(f"\n[bold]Grid summary:[/bold]")
-                        console.print(f"  {n_transforms} transforms x {n_models} models = {n_transforms * n_models} cells (+{n_models} original)")
-                        console.print(f"  Total responses to generate: [bold]{n_cells}[/bold]")
+                        console.print(f"  {n_transforms} transform{'s' if n_transforms != 1 else ''} + 1 original x {n_models} models = Evaluating [bold]{n_cells}[/bold] prompt/model combinations")
                         console.print(f"  Pairwise comparisons: [bold]{n_pairs}[/bold] ({n_eval_calls} LLM eval calls with position swap)\n")
                         step = 3
                 elif step == 3:
-                    console.print("[dim]Select a model to judge the evaluation:[/dim]")
-                    eval_model = _select_model(None)
+                    eval_model = _select_model(None, prompt_text="Select a model to judge the evaluation (use arrow keys):")
                     if eval_model is None:
                         step = 2
                     else:
