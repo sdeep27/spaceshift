@@ -203,6 +203,55 @@ def _manage_api_keys(first_time=False):
         console.print(f"[dim]No changes made[/dim]\n")
 
 
+_TRANSFORM_HINTS = {
+    "inverse": "Invert syntax/perspective, preserve meaning",
+    "abstract_up": "One level more general",
+    "abstract_down": "One level more specific",
+    "abstract_up3": "Three levels more general",
+    "abstract_down3": "Three levels more specific",
+    "active_up": "More active, direct, and passionate",
+    "passive_up": "More passive, detached, and timeless",
+    "reflection": "Mirror/flip across a meaningful axis",
+    "rotation": "Rotate perspective or framing",
+    "shear": "Skew one dimension while fixing another",
+    "scaling": "Amplify scope and intensity",
+    "recursion": "Apply the prompt to itself",
+    "dimension_up": "Elevate by one level of dimensionality",
+    "dimension_down": "Collapse by one level of dimensionality",
+    "improve_naive": "Straightforward prompt improvement",
+    "user_profile": "Add a first-person persona/context",
+    "double": "Duplicate the prompt (deterministic)",
+    "translate_chinese": "Translate to Chinese",
+    "translate_korean": "Translate to Korean",
+    "translate_hindi": "Translate to Hindi",
+    "translate_french": "Translate to French",
+    "translate_arabic": "Translate to Arabic",
+}
+
+
+def _select_transforms(checked_default=True):
+    """Interactive multi-select transform picker. Returns list of transform names or None."""
+    import questionary
+    from questionary import Separator as Sep
+    from .prompt_probe import list_transforms
+
+    all_transforms = list_transforms(v=False)
+    transform_choices = [
+        Sep(f"  ({len(all_transforms)} transforms available)"),
+    ] + [
+        questionary.Choice(
+            f"{name:<20} {_TRANSFORM_HINTS.get(name, '')}",
+            value=name,
+            checked=checked_default,
+        )
+        for name in all_transforms
+    ]
+    return questionary.checkbox(
+        "Select transforms to apply:",
+        choices=transform_choices,
+    ).ask()
+
+
 def _get_model_choices_by_category(per_category=8):
     """Build deduplicated model lists per category from rankings."""
     from .LLM import model_rankings, _get_model_name, _get_reasoning_effort
@@ -836,6 +885,143 @@ def _run_compare(prompt, models, evaluate, eval_model, save_dir):
         eval_thread.join()  # Wait for eval to finish before process exits
 
 
+def _write_grid_md(result, filepath):
+    """Write grid search results to a single consolidated markdown file."""
+    import os
+    from datetime import date
+
+    prompt = result["prompt"]
+    grid = result["grid"]  # sorted by rank when evaluated
+    models = result["models"]
+    transforms = result["transforms"]
+    evaluation = result.get("evaluation")
+
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)) or ".", exist_ok=True)
+
+    lines = []
+    # YAML frontmatter
+    lines.append("---")
+    lines.append(f"prompt: {prompt}")
+    lines.append("models:")
+    for m in models:
+        lines.append(f"  - {m}")
+    lines.append("transforms:")
+    for t in transforms:
+        lines.append(f"  - {t}")
+    if result.get("top_transform"):
+        lines.append(f"best_transform: {result['top_transform']}")
+    if result.get("top_model"):
+        lines.append(f"best_model: {result['top_model']}")
+    lines.append(f"date: {date.today().isoformat()}")
+    lines.append("---\n")
+
+    # Header
+    lines.append("# Grid Search Results\n")
+    lines.append(f"> **Prompt:** {prompt}\n")
+
+    # Summary
+    if result.get("top_transform") and result.get("top_model"):
+        best_score = grid[0].get("score", "N/A")
+        score_str = f"{best_score:.2f}" if isinstance(best_score, (int, float)) else str(best_score)
+        lines.append(f"**Best:** {result['top_transform']} x {result['top_model']} (score: {score_str})\n")
+
+    # Rankings table
+    lines.append("## Rankings\n")
+    lines.append("| Rank | Transform | Model | Score | Link |")
+    lines.append("|------|-----------|-------|-------|------|")
+    for cell in grid:
+        rank = cell.get("rank", "-")
+        score = cell.get("score", "-")
+        score_str = f"{score:.2f}" if isinstance(score, (int, float)) else str(score)
+        anchor = _to_anchor(f"{cell['transform']}--{cell['model']}")
+        lines.append(f"| {rank} | {cell['transform']} | {cell['model']} | {score_str} | [View](#{anchor}) |")
+    lines.append("")
+
+    # Evaluation metadata
+    if evaluation:
+        eval_metrics = evaluation.get("raw", {}).get("metrics_used", [])
+        if eval_metrics:
+            lines.append("## Evaluation\n")
+            lines.append("**Metrics:**")
+            for m in eval_metrics:
+                lines.append(f"- {m}")
+            lines.append("")
+
+    # Individual cell sections (ordered by rank)
+    for cell in grid:
+        anchor = _to_anchor(f"{cell['transform']}--{cell['model']}")
+        rank = cell.get("rank", "?")
+        score = cell.get("score")
+        score_str = f" ({score:.2f})" if isinstance(score, (int, float)) else ""
+
+        lines.append("---\n")
+        lines.append(f'<a id="{anchor}"></a>\n')
+        lines.append(f"## #{rank}: {cell['transform']} x {cell['model']}{score_str}\n")
+
+        # Show the transformed prompt if different from original
+        if cell["transform"] != "original":
+            lines.append("**Prompt used:**\n")
+            for pline in cell["prompt"].splitlines():
+                lines.append(f"> {pline}" if pline.strip() else ">")
+            lines.append("")
+
+        lines.append(cell["response"])
+        lines.append("")
+
+    with open(filepath, "w") as f:
+        f.write("\n".join(lines))
+
+    return filepath
+
+
+def _run_grid_search(prompt, models, transforms, eval_model, save_dir):
+    """Execute grid search pipeline."""
+    from rich.console import Console
+    from .grid_search import grid_search
+    from .compare_models import validate_model
+
+    console = Console()
+
+    # Resolve models for display
+    resolved = []
+    for m in models:
+        resolved.append(validate_model(m))
+    models = resolved
+
+    console.print(f"\n[bold]Running grid search...[/bold]")
+    console.print(f"  [dim]{len(transforms)} transforms x {len(models)} models[/dim]")
+    console.print()
+
+    # Run grid search with evaluation
+    result = grid_search(
+        prompt,
+        models=models,
+        transforms=transforms,
+        evaluate=True,
+        save=os.path.join(save_dir, "grid"),
+        concurrency=5,
+        v=True,
+        eval_model=eval_model,
+    )
+
+    # Write consolidated markdown
+    filepath = os.path.join(save_dir, "grid_search.md")
+    _write_grid_md(result, filepath)
+    console.print(f"\n[bold green]Saved to: {filepath}[/bold green]")
+
+    # Also show individual cell files
+    if result.get("saved"):
+        console.print(f"  [dim]{len(result['saved'])} individual cell files in {save_dir}/grid/[/dim]")
+
+    # Print best combination summary
+    if result.get("top_transform"):
+        best_score = result["evaluation"]["scores"][result["rankings"][0]]
+        console.print(f"\n[bold cyan]Best combination:[/bold cyan]")
+        console.print(f"  Transform: [bold]{result['top_transform']}[/bold]")
+        console.print(f"  Model: [bold]{result['top_model']}[/bold]")
+        console.print(f"  Score: [bold]{best_score:.2f}[/bold]")
+
+
 def _interactive_main():
     """Interactive mode — shown when user runs `spaceshift` with no args."""
     import questionary
@@ -857,7 +1043,7 @@ def _interactive_main():
                 Choice("Deep Research", value="research"),
                 Choice("Prompt Manipulate", value="prompt"),
                 Choice("Compare Models", value="compare"),
-                Choice("Grid Search", value="grid"),
+                Choice("Grid Search and Evaluation", value="grid"),
                 Choice("Prompt Tree", value="tree"),
                 Separator(),
                 Choice("Manage API Keys", value="keys"),
@@ -887,55 +1073,15 @@ def _interactive_main():
             if prompt is None:
                 continue
 
-            from .prompt_probe import list_transforms
-            all_transforms = list_transforms(v=False)
-
-            _TRANSFORM_HINTS = {
-                "inverse": "Invert syntax/perspective, preserve meaning",
-                "abstract_up": "One level more general",
-                "abstract_down": "One level more specific",
-                "abstract_up3": "Three levels more general",
-                "abstract_down3": "Three levels more specific",
-                "active_up": "More active, direct, and passionate",
-                "passive_up": "More passive, detached, and timeless",
-                "reflection": "Mirror/flip across a meaningful axis",
-                "rotation": "Rotate perspective or framing",
-                "shear": "Skew one dimension while fixing another",
-                "scaling": "Amplify scope and intensity",
-                "recursion": "Apply the prompt to itself",
-                "dimension_up": "Elevate by one level of dimensionality",
-                "dimension_down": "Collapse by one level of dimensionality",
-                "improve_naive": "Straightforward prompt improvement",
-                "user_profile": "Add a first-person persona/context",
-                "double": "Duplicate the prompt (deterministic)",
-                "translate_chinese": "Translate to Chinese",
-                "translate_korean": "Translate to Korean",
-                "translate_hindi": "Translate to Hindi",
-                "translate_french": "Translate to French",
-                "translate_arabic": "Translate to Arabic",
-            }
-
-            from questionary import Separator as Sep
-            transform_choices = [
-                Sep(f"  ({len(all_transforms)} transforms available)"),
-            ] + [
-                questionary.Choice(
-                    f"{name:<20} {_TRANSFORM_HINTS.get(name, '')}",
-                    value=name,
-                    checked=True,
-                )
-                for name in all_transforms
-            ]
-            selected = questionary.checkbox(
-                "Select transforms to apply:",
-                choices=transform_choices,
-            ).ask()
+            selected = _select_transforms(checked_default=True)
             if selected is None:
                 continue
             if not selected:
                 console.print("[yellow]No transforms selected.[/yellow]\n")
                 continue
 
+            from .prompt_probe import list_transforms
+            all_transforms = list_transforms(v=False)
             console.print(f"\n  [bold]{len(selected)}[/bold] of {len(all_transforms)} transforms selected\n")
 
             console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
@@ -1012,6 +1158,64 @@ def _interactive_main():
                 continue
 
             _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=save_dir.strip())
+            break
+        elif mode == "grid":
+            console.print("\n[bold]Grid Search and Evaluation[/bold]\n")
+            console.print("  Combines [bold]prompt transforms[/bold] x [bold]models[/bold] into a grid,")
+            console.print("  generates all responses, then uses [bold]pairwise evaluation[/bold]")
+            console.print("  to rank and find the best combination.\n")
+
+            prompt = questionary.text(
+                "Enter your prompt:",
+                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+            ).ask()
+            if prompt is None:
+                continue
+
+            models = _select_compare_models()
+            if models is None:
+                continue
+
+            selected_transforms = _select_transforms(checked_default=False)
+            if selected_transforms is None:
+                continue
+            if not selected_transforms:
+                console.print("[yellow]No transforms selected.[/yellow]\n")
+                continue
+
+            # Grid summary
+            n_models = len(models)
+            n_transforms = len(selected_transforms)
+            n_cells = n_transforms * n_models + n_models  # transform cells + original cells
+            if n_cells <= 5:
+                n_pairs = n_cells * (n_cells - 1) // 2
+            else:
+                all_possible = n_cells * (n_cells - 1) // 2
+                n_pairs = min(all_possible, n_cells * 5)
+            n_eval_calls = n_pairs * 2  # position swap
+
+            console.print(f"\n[bold]Grid summary:[/bold]")
+            console.print(f"  {n_transforms} transforms x {n_models} models = {n_transforms * n_models} cells (+{n_models} original)")
+            console.print(f"  Total responses to generate: [bold]{n_cells}[/bold]")
+            console.print(f"  Pairwise comparisons: [bold]{n_pairs}[/bold] ({n_eval_calls} LLM eval calls with position swap)\n")
+
+            console.print("[dim]Select a model to judge the evaluation:[/dim]")
+            eval_model = _select_model(None)
+            if eval_model is None:
+                continue
+
+            default_dir = os.path.join("output", _prompt_to_slug(prompt))
+            save_dir = questionary.text(
+                "Output folder:",
+                default=default_dir,
+            ).ask()
+            if save_dir is None:
+                continue
+
+            _run_grid_search(
+                prompt.strip(), models, selected_transforms,
+                eval_model=eval_model, save_dir=save_dir.strip(),
+            )
             break
         elif mode == "keys":
             _manage_api_keys(first_time=False)
