@@ -461,6 +461,282 @@ def _run_agent(prompt, model, save_dir, no_view):
         view(output_dir)
 
 
+def _model_to_provider(model_name):
+    """Infer provider from model name string."""
+    if model_name.startswith("gemini/"):
+        return "gemini"
+    if model_name.startswith("xai/"):
+        return "xai"
+    if model_name.startswith("together_ai/"):
+        return "togetherai"
+    if "claude" in model_name:
+        return "anthropic"
+    return "openai"
+
+
+def _select_default_compare_models(n=3):
+    """Pick top-ranked models, one per configured provider, for cross-provider comparison."""
+    from .LLM import model_rankings, _get_model_name
+    providers = set(_get_providers())
+
+    best_entries = model_rankings.get("best", [])
+
+    selected = []
+    used_providers = set()
+
+    for entry in best_entries:
+        model = _get_model_name(entry)
+        provider = _model_to_provider(model)
+        if provider in providers and provider not in used_providers:
+            selected.append(model)
+            used_providers.add(provider)
+            if len(selected) >= n:
+                break
+
+    # Fill remaining slots with next best models from any configured provider
+    if len(selected) < n:
+        for entry in best_entries:
+            model = _get_model_name(entry)
+            provider = _model_to_provider(model)
+            if provider in providers and model not in selected:
+                selected.append(model)
+                if len(selected) >= n:
+                    break
+
+    return selected
+
+
+def _select_compare_models():
+    """Interactive multi-select model picker grouped by category. Returns list of model names."""
+    import questionary
+    from questionary import Choice, Separator
+    from rich.console import Console
+    console = Console()
+
+    from .LLM import model_rankings, _get_model_name, _get_reasoning_effort
+
+    defaults = set(_select_default_compare_models(3))
+
+    categories = ["best", "fast", "cheap", "open"]
+    choices = []
+    seen = set()
+
+    for cat in categories:
+        entries = model_rankings.get(cat, [])
+        if not entries:
+            continue
+        choices.append(Separator(f"── {cat} ──"))
+        count = 0
+        for e in entries:
+            name = _get_model_name(e)
+            if name in seen:
+                continue
+            seen.add(name)
+            effort = _get_reasoning_effort(e)
+            suffix = f"  (reasoning: {effort})" if effort and effort != "default" else ""
+            label = f"{name}{suffix}"
+            choices.append(Choice(label, value=name, checked=name in defaults))
+            count += 1
+            if count >= 6:
+                break
+
+    selected = questionary.checkbox(
+        "Select models to compare (space to toggle, enter to confirm):",
+        choices=choices,
+        validate=lambda x: len(x) >= 2 or "Select at least 2 models",
+    ).ask()
+
+    if selected is None:
+        return None
+
+    console.print(f"\n  [bold]{len(selected)} model(s) selected[/bold]\n")
+    return selected
+
+
+def _to_anchor(label):
+    """Convert model label to markdown anchor ID."""
+    import re
+    anchor = label.lower()
+    anchor = re.sub(r'[/.]', '-', anchor)
+    anchor = re.sub(r'[^a-z0-9\-]', '', anchor)
+    anchor = re.sub(r'-+', '-', anchor).strip('-')
+    return anchor
+
+
+def _write_compare_md(result, filepath):
+    """Write comparison results to a single markdown file with internal links."""
+    import os
+    from datetime import date
+
+    prompt = result["prompt"]
+    responses = result["responses"]
+    models = result["models"]
+
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)) or ".", exist_ok=True)
+
+    lines = []
+    # YAML frontmatter
+    lines.append("---")
+    lines.append(f"prompt: {prompt}")
+    lines.append("models:")
+    for m in models:
+        lines.append(f"  - {m}")
+    lines.append(f"date: {date.today().isoformat()}")
+    lines.append("---\n")
+
+    # Header
+    lines.append("# Model Comparison\n")
+    lines.append(f"> **Prompt:** {prompt}\n")
+
+    # Table of contents with links
+    lines.append("| Model | Link |")
+    lines.append("|-------|------|")
+    for m in models:
+        anchor = _to_anchor(m)
+        lines.append(f"| {m} | [View response](#{anchor}) |")
+    lines.append("")
+
+    # Model response sections
+    for m, response in zip(models, responses):
+        anchor = _to_anchor(m)
+        lines.append("---\n")
+        lines.append(f"## {m}\n")
+        lines.append(f"{response}\n")
+
+    with open(filepath, "w") as f:
+        f.write("\n".join(lines))
+
+    return filepath
+
+
+def _append_eval_to_md(filepath, eval_result, model_labels, eval_model_name):
+    """Append pairwise evaluation results to an existing comparison markdown file."""
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    rankings = eval_result["rankings"]
+    scores = eval_result["scores"]
+    metrics = eval_result["raw"]["metrics_used"]
+
+    # Build evaluation section
+    eval_lines = []
+    eval_lines.append("---\n")
+    eval_lines.append("## Evaluation\n")
+    eval_lines.append(f"**Eval model:** {eval_model_name}\n")
+    eval_lines.append("**Metrics:**")
+    for m in metrics:
+        eval_lines.append(f"- {m}")
+    eval_lines.append("")
+    eval_lines.append("| Rank | Model | Score |")
+    eval_lines.append("|------|-------|-------|")
+    for rank, idx in enumerate(rankings, 1):
+        label = model_labels[idx]
+        anchor = _to_anchor(label)
+        score = scores[idx]
+        eval_lines.append(f"| {rank} | [{label}](#{anchor}) | {score:.2f} |")
+    eval_lines.append("")
+
+    eval_section = "\n".join(eval_lines)
+
+    # Update the ToC table to include scores
+    import re
+    # Replace the simple table header and rows with scored versions
+    old_header = "| Model | Link |"
+    new_header = "| Rank | Model | Score | Link |"
+    if old_header in content:
+        content = content.replace(old_header, new_header)
+        content = content.replace("|-------|------|", "|------|-------|-------|------|")
+        for idx in range(len(model_labels)):
+            label = model_labels[idx]
+            anchor = _to_anchor(label)
+            old_row = f"| {label} | [View response](#{anchor}) |"
+            rank = rankings.index(idx) + 1
+            score = scores[idx]
+            new_row = f"| {rank} | {label} | {score:.2f} | [View response](#{anchor}) |"
+            content = content.replace(old_row, new_row)
+
+    # Append evaluation section
+    content = content.rstrip() + "\n\n" + eval_section
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+
+def _prompt_slug(prompt, max_len=40):
+    """Generate a filesystem-safe slug from a prompt string."""
+    import re
+    slug = prompt.lower().strip()
+    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+    slug = re.sub(r'[\s]+', '-', slug)
+    return slug[:max_len].rstrip('-')
+
+
+def _run_compare(prompt, models, evaluate, eval_model, save_dir, no_view):
+    """Execute model comparison pipeline."""
+    import threading
+    from rich.console import Console
+    from .compare_models import compare_models, validate_model
+    from .evaluate import pairwise_evaluate
+    from .viewer import view_background
+
+    console = Console()
+
+    # Resolve models
+    resolved = []
+    for m in models:
+        resolved.append(validate_model(m))
+    models = resolved
+
+    console.print(f"\n[bold]Comparing {len(models)} models:[/bold]")
+    for i, m in enumerate(models, 1):
+        console.print(f"  [{i}] {m}")
+    console.print()
+
+    # Run comparison (no evaluation yet)
+    result = compare_models(prompt, models=models, evaluate=False, v=True)
+
+    # Determine save path
+    if not save_dir:
+        slug = _prompt_slug(prompt)
+        save_dir = f"compare_{slug}"
+
+    import os
+    os.makedirs(save_dir, exist_ok=True)
+    filepath = os.path.join(save_dir, "comparison.md")
+
+    # Write markdown
+    _write_compare_md(result, filepath)
+    console.print(f"\n[bold green]Saved to: {filepath}[/bold green]")
+
+    # Open viewer in background
+    if not no_view:
+        console.print(f"[dim]Opening viewer...[/dim]")
+        view_background(save_dir)
+
+    # Run pairwise evaluation in background thread if requested
+    if evaluate:
+        eval_model_name = eval_model or "rank 1 (default)"
+        console.print(f"\n[bold cyan]Running pairwise evaluation...[/bold cyan]")
+        console.print(f"  [dim]Eval model: {eval_model_name}[/dim]")
+
+        def run_eval():
+            try:
+                eval_result = pairwise_evaluate(
+                    prompt=prompt,
+                    results=result["responses"],
+                    eval_model=eval_model,
+                    v=True,
+                )
+                _append_eval_to_md(filepath, eval_result, result["models"], eval_model_name)
+                console.print(f"\n[bold green]Evaluation complete. Results updated in {filepath}[/bold green]")
+            except Exception as e:
+                console.print(f"\n[red]Evaluation failed: {e}[/red]")
+
+        eval_thread = threading.Thread(target=run_eval, daemon=True)
+        eval_thread.start()
+        eval_thread.join()  # Wait for eval to finish before process exits
+
+
 def _interactive_main():
     """Interactive mode — shown when user runs `spaceshift` with no args."""
     import questionary
@@ -504,6 +780,30 @@ def _interactive_main():
                 continue
             _run_research(prompt.strip(), model, save_dir=None, no_view=False)
             break
+        elif mode == "compare":
+            prompt = questionary.text(
+                "Enter your prompt:",
+                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+            ).ask()
+            if prompt is None:
+                continue
+            models = _select_compare_models()
+            if models is None:
+                continue
+            run_eval = questionary.confirm(
+                "Run pairwise evaluation after responses?",
+                default=False,
+            ).ask()
+            if run_eval is None:
+                continue
+            eval_model = None
+            if run_eval:
+                console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
+                eval_model = _select_model(None)
+                if eval_model is None:
+                    continue
+            _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=None, no_view=False)
+            break
         elif mode == "keys":
             _manage_api_keys(first_time=False)
             # Reload provider display
@@ -540,6 +840,15 @@ def main():
     s.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Uses rank 1 if omitted.")
     s.add_argument("--view", action="store_true", help="Open viewer after synthesis")
 
+    # compare subcommand
+    c = sub.add_parser("compare", help="Compare a prompt across multiple models")
+    c.add_argument("prompt", help="Prompt to compare across models")
+    c.add_argument("--models", "-m", nargs="+", default=None, help="Models to compare (names, shorthands, or rank numbers). Auto-selects if omitted.")
+    c.add_argument("--evaluate", "-e", action="store_true", help="Run pairwise evaluation after generating responses")
+    c.add_argument("--eval-model", default=None, help="Model to use for pairwise evaluation (default: rank 1)")
+    c.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
+    c.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
+
     # agent subcommand (dev/testing — not in interactive menu)
     a = sub.add_parser("agent", help="Run autonomous research agent on a topic")
     a.add_argument("prompt", help="Research topic or question")
@@ -558,6 +867,10 @@ def main():
         if model is None:
             raise SystemExit(0)
         _run_research(args.prompt, model, args.save, args.no_view)
+    elif args.command == "compare":
+        _ensure_api_keys()
+        models = args.models or _select_default_compare_models(3)
+        _run_compare(args.prompt, models, args.evaluate, args.eval_model, args.save, args.no_view)
     elif args.command == "agent":
         _ensure_api_keys()
         model = _select_model(args.model)

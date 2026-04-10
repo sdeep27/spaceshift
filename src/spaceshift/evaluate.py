@@ -23,6 +23,7 @@ def pairwise_evaluate(
     penalize_verbosity=False,
     per_metric=False,
     batch_size=4,
+    eval_model=None,
     v=True
 ):
     """
@@ -91,7 +92,7 @@ def pairwise_evaluate(
         if v:
             print("Auto-generating evaluation metrics...")
         gen_prompts = [prompt] * len(items) if prompt else prompts
-        metrics = _generate_metrics(items, additional_information, gen_prompts, results, mode="pairwise")
+        metrics = _generate_metrics(items, additional_information, gen_prompts, results, mode="pairwise", eval_model=eval_model)
         auto_generated = True
         if v:
             print(f"Generated metrics: {metrics}")
@@ -138,7 +139,8 @@ def pairwise_evaluate(
                     metric_question=metric_question,
                     additional_information=additional_information,
                     position_swap=position_swap,
-                    penalize_verbosity=penalize_verbosity
+                    penalize_verbosity=penalize_verbosity,
+                    eval_model=eval_model
                 )
             return winners
         return _compare_pair_multi_metric(
@@ -147,7 +149,8 @@ def pairwise_evaluate(
             metrics=metrics,
             additional_information=additional_information,
             position_swap=position_swap,
-            penalize_verbosity=penalize_verbosity
+            penalize_verbosity=penalize_verbosity,
+            eval_model=eval_model
         )
 
     if v:
@@ -312,7 +315,7 @@ _DEFAULT_METRICS_ABSOLUTE = {
 }
 
 
-def _generate_metrics(items, additional_information, prompts, results, mode="absolute"):
+def _generate_metrics(items, additional_information, prompts, results, mode="absolute", eval_model=None):
     """Auto-generate 3 broad evaluation metrics based on the prompt.
 
     Only uses the prompt (not the responses) to avoid biasing metrics toward
@@ -333,7 +336,7 @@ def _generate_metrics(items, additional_information, prompts, results, mode="abs
         return list(_DEFAULT_METRICS_PAIRWISE) if mode == "pairwise" else dict(_DEFAULT_METRICS_ABSOLUTE)
 
     if mode == "pairwise":
-        result = LLM(model=1, v=False).sys(
+        result = LLM(model=eval_model or 1, v=False).sys(
             "You suggest evaluation metrics for comparing LLM outputs. "
             "Metrics should be broad and general-purpose — relevant to the subject matter, but broad enough metrics to be applicable even to a different, yet related, subject."
             "It should not be too specific."
@@ -346,7 +349,7 @@ def _generate_metrics(items, additional_information, prompts, results, mode="abs
 
         return result.get("metrics", list(_DEFAULT_METRICS_PAIRWISE))
 
-    result = LLM(model=1, v=False).sys(
+    result = LLM(model=eval_model or 1, v=False).sys(
         "You suggest evaluation metrics for comparing LLM outputs. "
         "Metrics should be broad and general-purpose — relevant to the subject matter "
         "but not tailored to any specific response. "
@@ -361,7 +364,7 @@ def _generate_metrics(items, additional_information, prompts, results, mode="abs
 
 
 def _compare_pair(item_a, item_b, prompt_a, prompt_b, metric_question,
-                  additional_information, position_swap, penalize_verbosity):
+                  additional_information, position_swap, penalize_verbosity, eval_model=None):
     """Compare two items on a metric. Returns 'A', 'B', or 'tie'."""
     from .LLM import LLM
 
@@ -394,7 +397,7 @@ Evaluate based on: {metric_question}
 Which response is better? Reply with JSON only:
 {{"winner": "A" or "B" or "tie", "reasoning": "brief explanation"}}"""
 
-        result = LLM(model=1, v=False).user(eval_prompt).result_json()
+        result = LLM(model=eval_model or 1, v=False).user(eval_prompt).result_json()
         return result.get("winner", "tie").upper()
 
     # First comparison: A, B order
@@ -428,7 +431,7 @@ Which response is better? Reply with JSON only:
 
 
 def _compare_pair_multi_metric(item_a, item_b, prompt_a, prompt_b, metrics,
-                               additional_information, position_swap, penalize_verbosity):
+                               additional_information, position_swap, penalize_verbosity, eval_model=None):
     """Compare two items on all metrics in a single LLM call. Returns {metric_question: winner}."""
     from .LLM import LLM
 
@@ -474,7 +477,7 @@ For EACH metric, determine which response is better. You MUST use the exact keys
 
     def do_comparison(first, second, first_prompt, second_prompt):
         eval_prompt = build_prompt(first, second, first_prompt, second_prompt)
-        return LLM(model=1, v=False).user(eval_prompt).result_json()
+        return LLM(model=eval_model or 1, v=False).user(eval_prompt).result_json()
 
     def extract_winners(result, warn_label=""):
         winners = {}

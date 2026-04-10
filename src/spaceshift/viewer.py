@@ -350,6 +350,37 @@ def _make_handler(root):
     return Handler
 
 
+def view_background(path=".", port=8383):
+    """Start viewer in a background daemon thread. Returns immediately after opening browser."""
+    import threading
+
+    root = os.path.abspath(path)
+    if not os.path.isdir(root):
+        raise ValueError(f"Not a directory: {root}")
+
+    for attempt in range(10):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind(("127.0.0.1", port + attempt))
+            sock.close()
+            port = port + attempt
+            break
+        except OSError:
+            continue
+    else:
+        raise RuntimeError(f"Could not find open port near {port}")
+
+    handler = _make_handler(root)
+    server = HTTPServer(("127.0.0.1", port), handler)
+    url = f"http://127.0.0.1:{port}"
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    webbrowser.open(url)
+    return url, server
+
+
 def view(path=".", port=8383, no_open=False):
     """Serve a directory of markdown files in the browser.
 
