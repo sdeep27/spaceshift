@@ -829,7 +829,47 @@ def _append_eval_to_md(filepath, eval_result, model_labels, eval_model_name):
 
 
 
-def _run_compare(prompt, models, evaluate, eval_model, save_dir):
+def _collect_eval_metrics():
+    """Collect evaluation metrics from user. Returns None for auto-generate, or list of custom metric strings."""
+    import questionary
+    from rich.console import Console
+    console = Console()
+
+    choice = questionary.select(
+        "Evaluation metrics:",
+        choices=[
+            questionary.Choice("Auto-generate metrics", value="auto"),
+            questionary.Choice("Define custom metrics", value="custom"),
+        ],
+        default="auto",
+    ).ask()
+    if choice is None or choice == "auto":
+        return None
+
+    metrics = []
+    console.print("\n  [dim]Add evaluation metrics one at a time. Press Enter with empty input when done.[/dim]\n")
+    while True:
+        label = f"  Metric {len(metrics) + 1}" if not metrics else f"  Metric {len(metrics) + 1} (Enter to finish)"
+        metric = questionary.text(label).ask()
+        if metric is None:
+            # Cancelled
+            if metrics:
+                return metrics
+            return None
+        if not metric.strip():
+            break
+        metrics.append(metric.strip())
+        console.print(f"    [green]Added:[/green] {metric.strip()}")
+
+    if not metrics:
+        console.print("  [dim]No custom metrics — will auto-generate.[/dim]")
+        return None
+
+    console.print(f"\n  [bold]{len(metrics)} custom metric(s) defined[/bold]\n")
+    return metrics
+
+
+def _run_compare(prompt, models, evaluate, eval_model, save_dir, metrics=None):
     """Execute model comparison pipeline."""
     import threading
     from rich.console import Console
@@ -862,12 +902,15 @@ def _run_compare(prompt, models, evaluate, eval_model, save_dir):
         eval_model_name = eval_model or "rank 1 (default)"
         console.print(f"\n[bold cyan]Running pairwise evaluation...[/bold cyan]")
         console.print(f"  [dim]Eval model: {eval_model_name}[/dim]")
+        if metrics:
+            console.print(f"  [dim]Custom metrics: {len(metrics)}[/dim]")
 
         def run_eval():
             try:
                 eval_result = pairwise_evaluate(
                     prompt=prompt,
                     results=result["responses"],
+                    metrics=metrics,
                     eval_model=eval_model,
                     v=True,
                 )
@@ -1146,7 +1189,7 @@ def _interactive_main():
             )
         elif mode == "compare":
             step = 0
-            prompt = models = run_eval = eval_model = save_dir = None
+            prompt = models = run_eval = eval_model = eval_metrics = save_dir = None
             while step >= 0:
                 if step == 0:
                     prompt = questionary.text(
@@ -1188,6 +1231,7 @@ def _interactive_main():
                     if eval_model is None:
                         step = 2
                     else:
+                        eval_metrics = _collect_eval_metrics()
                         step = 4
                 elif step == 4:
                     default_dir = os.path.join("output", _prompt_to_slug(prompt))
@@ -1203,7 +1247,8 @@ def _interactive_main():
                     break
             if step < 0:
                 continue
-            _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=save_dir.strip())
+            eval_metrics = eval_metrics if run_eval else None
+            _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=save_dir.strip(), metrics=eval_metrics)
             break
         elif mode == "grid":
             console.print("\n[bold]Grid Search and Evaluation[/bold]\n")
@@ -1318,6 +1363,7 @@ def main():
     c.add_argument("--models", "-m", nargs="+", default=None, help="Models to compare (names, shorthands, or rank numbers). Auto-selects if omitted.")
     c.add_argument("--evaluate", "-e", action="store_true", help="Run pairwise evaluation after generating responses")
     c.add_argument("--eval-model", default=None, help="Model to use for pairwise evaluation (default: rank 1)")
+    c.add_argument("--metrics", nargs="+", default=None, help="Custom evaluation metrics (default: auto-generate)")
     c.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
 
     # agent subcommand (dev/testing — not in interactive menu)
@@ -1350,7 +1396,7 @@ def main():
         _ensure_api_keys()
         models = args.models or _select_default_compare_models(3)
         save_dir = args.save or os.path.join("output", _prompt_to_slug(args.prompt))
-        _run_compare(args.prompt, models, args.evaluate, args.eval_model, save_dir)
+        _run_compare(args.prompt, models, args.evaluate, args.eval_model, save_dir, metrics=args.metrics)
     elif args.command == "agent":
         _ensure_api_keys()
         model = _select_model(args.model)
