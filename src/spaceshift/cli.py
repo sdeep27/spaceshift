@@ -675,11 +675,10 @@ def _select_compare_models():
 
 
 def _to_anchor(label):
-    """Convert model label to markdown anchor ID."""
+    """Convert model label to a safe HTML anchor ID."""
     import re
     anchor = label.lower()
-    anchor = re.sub(r'[/.]', '-', anchor)
-    anchor = re.sub(r'[^a-z0-9\-]', '', anchor)
+    anchor = re.sub(r'[^\w-]', '-', anchor)
     anchor = re.sub(r'-+', '-', anchor).strip('-')
     return anchor
 
@@ -721,6 +720,7 @@ def _write_compare_md(result, filepath):
     for m, response in zip(models, responses):
         anchor = _to_anchor(m)
         lines.append("---\n")
+        lines.append(f'<a id="{anchor}"></a>\n')
         lines.append(f"## {m}\n")
         lines.append(f"{response}\n")
 
@@ -783,22 +783,13 @@ def _append_eval_to_md(filepath, eval_result, model_labels, eval_model_name):
         f.write(content)
 
 
-def _prompt_slug(prompt, max_len=40):
-    """Generate a filesystem-safe slug from a prompt string."""
-    import re
-    slug = prompt.lower().strip()
-    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
-    slug = re.sub(r'[\s]+', '-', slug)
-    return slug[:max_len].rstrip('-')
 
-
-def _run_compare(prompt, models, evaluate, eval_model, save_dir, no_view):
+def _run_compare(prompt, models, evaluate, eval_model, save_dir):
     """Execute model comparison pipeline."""
     import threading
     from rich.console import Console
     from .compare_models import compare_models, validate_model
     from .evaluate import pairwise_evaluate
-    from .viewer import view_background
 
     console = Console()
 
@@ -816,23 +807,10 @@ def _run_compare(prompt, models, evaluate, eval_model, save_dir, no_view):
     # Run comparison (no evaluation yet)
     result = compare_models(prompt, models=models, evaluate=False, v=True)
 
-    # Determine save path
-    if not save_dir:
-        slug = _prompt_slug(prompt)
-        save_dir = f"compare_{slug}"
-
-    import os
-    os.makedirs(save_dir, exist_ok=True)
-    filepath = os.path.join(save_dir, "comparison.md")
-
     # Write markdown
+    filepath = os.path.join(save_dir, "comparison.md")
     _write_compare_md(result, filepath)
     console.print(f"\n[bold green]Saved to: {filepath}[/bold green]")
-
-    # Open viewer in background
-    if not no_view:
-        console.print(f"[dim]Opening viewer...[/dim]")
-        view_background(save_dir)
 
     # Run pairwise evaluation in background thread if requested
     if evaluate:
@@ -1000,19 +978,37 @@ def _interactive_main():
             models = _select_compare_models()
             if models is None:
                 continue
-            run_eval = questionary.confirm(
-                "Run pairwise evaluation after responses?",
-                default=False,
+
+            eval_opts = questionary.checkbox(
+                "Options:",
+                choices=[
+                    questionary.Choice(
+                        "Enable Pairwise Model Evaluation of Responses",
+                        value="evaluate",
+                        checked=False,
+                    ),
+                ],
             ).ask()
-            if run_eval is None:
+            if eval_opts is None:
                 continue
+            run_eval = "evaluate" in eval_opts
+
             eval_model = None
             if run_eval:
                 console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
                 eval_model = _select_model(None)
                 if eval_model is None:
                     continue
-            _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=None, no_view=False)
+
+            default_dir = os.path.join("output", _prompt_to_slug(prompt))
+            save_dir = questionary.text(
+                "Output folder:",
+                default=default_dir,
+            ).ask()
+            if save_dir is None:
+                continue
+
+            _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=save_dir.strip())
             break
         elif mode == "keys":
             _manage_api_keys(first_time=False)
@@ -1057,7 +1053,6 @@ def main():
     c.add_argument("--evaluate", "-e", action="store_true", help="Run pairwise evaluation after generating responses")
     c.add_argument("--eval-model", default=None, help="Model to use for pairwise evaluation (default: rank 1)")
     c.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
-    c.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
 
     # agent subcommand (dev/testing — not in interactive menu)
     a = sub.add_parser("agent", help="Run autonomous research agent on a topic")
@@ -1088,7 +1083,8 @@ def main():
     elif args.command == "compare":
         _ensure_api_keys()
         models = args.models or _select_default_compare_models(3)
-        _run_compare(args.prompt, models, args.evaluate, args.eval_model, args.save, args.no_view)
+        save_dir = args.save or os.path.join("output", _prompt_to_slug(args.prompt))
+        _run_compare(args.prompt, models, args.evaluate, args.eval_model, save_dir)
     elif args.command == "agent":
         _ensure_api_keys()
         model = _select_model(args.model)
