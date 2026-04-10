@@ -1783,7 +1783,8 @@ class LLM:
             state["generation_summary"] = self._generation_summary
         with open(filepath, 'w') as f:
             json.dump(state, f, indent=2)
-        print(f"Saved instance {filepath}!")
+        if self.v:
+            print(f"Saved instance {filepath}!")
         return self
 
     def run_history(self, **kwargs):
@@ -1871,6 +1872,7 @@ class LLM:
             llm._generated_from = state["generated_from"]
         if "generation_summary" in state:
             llm._generation_summary = state["generation_summary"]
-        print(f"Loaded instance {filepath}!")
+        if llm.v:
+            print(f"Loaded instance {filepath}!")
         return llm
     
