@@ -478,7 +478,7 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from rich.console import Console
     from .prompt_probe import prompt_transform, list_transforms
-    from .utils import _write_consolidated_md, _write_md
+    from .utils import _write_consolidated_md
 
     console = Console()
 
@@ -545,7 +545,7 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
     console.print(f"\n[bold green]{len(transforms)} transforms saved.[/bold green]")
     console.print(f"  [dim]{saved}[/dim]")
 
-    # Phase 2: Generate outputs as separate files if requested
+    # Phase 2: Generate outputs and save consolidated file
     if output_model:
         console.print(f"\n[bold]Generating {len(transforms)} outputs with {output_model}...[/bold]")
         from .LLM import LLM
@@ -568,23 +568,18 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
                     responses[idx] = response
                     done_count += 1
                     console.print(f"  [{done_count}/{len(transforms)}] [green]{name}[/green]")
-
-                    # Save output file immediately
-                    out_path = os.path.join(save_dir, f"{name}.md")
-                    meta = {
-                        "transform": name,
-                        "prompt": transformed_prompts[idx],
-                        "original_prompt": prompt,
-                        "model": output_model,
-                    }
-                    _write_md(out_path, response, meta)
                 except Exception as e:
                     done_count += 1
                     console.print(f"  [{done_count}/{len(transforms)}] [red]{transforms[futures[future]]} — failed: {e}[/red]")
 
+        outputs_path = os.path.join(save_dir, "outputs.md")
+        saved_outputs = _write_consolidated_md(
+            outputs_path, prompt, transforms, transformed_prompts,
+            manipulation_model=model, output_model=output_model, responses=responses,
+        )
         output_count = sum(1 for r in responses if r is not None)
         console.print(f"\n[bold green]{output_count} outputs saved.[/bold green]")
-        console.print(f"  [dim]{save_dir}/[/dim]")
+        console.print(f"  [dim]{saved_outputs}[/dim]")
 
 
 def _model_to_provider(model_name):
@@ -942,6 +937,7 @@ def _interactive_main():
                 "translate_arabic": "Translate to Arabic",
             }
 
+            console.print(f"\n  [dim]({len(all_transforms)} transforms selected)[/dim]\n")
             selected = questionary.checkbox(
                 "Select transforms to apply:",
                 choices=[
