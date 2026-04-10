@@ -917,7 +917,7 @@ def _interactive_main():
 
             from questionary import Separator as Sep
             transform_choices = [
-                Sep(f"  ({len(all_transforms)} transforms selected)"),
+                Sep(f"  ({len(all_transforms)} transforms available)"),
             ] + [
                 questionary.Choice(
                     f"{name:<20} {_TRANSFORM_HINTS.get(name, '')}",
