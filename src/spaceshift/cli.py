@@ -469,6 +469,195 @@ def _prompt_to_slug(prompt, max_len=40):
     return slug[:max_len].rstrip('_')
 
 
+def _calculate_tree_count(n_list):
+    """Total prompts for a direction given its n array. Returns (total, breakdown_str)."""
+    if not n_list:
+        return 0, ""
+    parts = []
+    running = 1
+    total = 0
+    for num in n_list:
+        running *= num
+        parts.append(str(running))
+        total += running
+    return total, " + ".join(parts)
+
+
+def _build_md_tree(nodes, root_prompt, reverse=False):
+    """Build indented dash lines from flat node list using parent references."""
+    children_of = {}
+    for node in nodes:
+        parent = node.get("parent", root_prompt)
+        children_of.setdefault(parent, []).append(node)
+
+    lines = []
+
+    def _recurse(parent_prompt, indent=0):
+        for child in children_of.get(parent_prompt, []):
+            prefix = "  " * indent + "- "
+            lines.append(f"{prefix}{child['prompt']}")
+            _recurse(child["prompt"], indent + 1)
+
+    if reverse:
+        # For super: collect all lines then reverse groups so deepest appears first
+        # Build depth-first, then reverse top-level ordering
+        top_level = children_of.get(root_prompt, [])
+        all_groups = []
+        for top_node in top_level:
+            group_lines = []
+            group_lines.append(f"- {top_node['prompt']}")
+            # Collect children recursively
+            def _collect(parent_prompt, indent=1):
+                for child in children_of.get(parent_prompt, []):
+                    group_lines.append(f"{'  ' * indent}- {child['prompt']}")
+                    _collect(child["prompt"], indent + 1)
+            _collect(top_node["prompt"])
+            all_groups.append(group_lines)
+
+        # Reverse: deepest-rooted groups first
+        # Since super goes UP, depth-0 nodes are closest to root.
+        # We want furthest from root first, but the tree structure has depth-0
+        # as immediate parents of root. With multi-level, depth-0 nodes have
+        # children at depth-1 (more abstract). So we reverse the top-level list
+        # and also show children above parents within each group.
+        for group in reversed(all_groups):
+            lines.extend(group)
+    else:
+        _recurse(root_prompt)
+
+    return lines
+
+
+def _write_tree_md(tree, path, model, sub_n, super_n, side_n, output_model=None):
+    """Write a consolidated tree.md with hierarchical dash formatting."""
+    from datetime import datetime
+
+    if not path.endswith(".md"):
+        path += ".md"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    prompt = tree["prompt"]
+
+    # Calculate total
+    total = 1  # root
+    for n_list in (sub_n, super_n, side_n):
+        if n_list:
+            count, _ = _calculate_tree_count(n_list)
+            total += count
+
+    # Build frontmatter
+    meta_lines = ["---"]
+    meta_lines.append(f"original_prompt: \"{prompt}\"")
+    meta_lines.append(f"tree_model: {model}")
+    if output_model:
+        meta_lines.append(f"output_model: {output_model}")
+    meta_lines.append(f"date: {datetime.now().strftime('%Y-%m-%d')}")
+    meta_lines.append("directions:")
+    if sub_n:
+        meta_lines.append(f"  sub: {sub_n}")
+    if super_n:
+        meta_lines.append(f"  super: {super_n}")
+    if side_n:
+        meta_lines.append(f"  side: {side_n}")
+    meta_lines.append(f"total_prompts: {total}")
+    meta_lines.append("---")
+
+    lines = meta_lines + [""]
+    lines.append("# Prompt Tree\n")
+    lines.append(f"> **{prompt}**\n")
+
+    # Super section (above root) — deepest/most abstract first
+    if "super" in tree and tree["super"]:
+        lines.append("---\n")
+        lines.append("## Super (above)\n")
+        lines.append("Broader prompts that contain the root as a subtopic.\n")
+        lines.extend(_build_md_tree(tree["super"], prompt, reverse=True))
+        lines.append("")
+
+    # Side section (alongside root)
+    if "side" in tree and tree["side"]:
+        lines.append("---\n")
+        lines.append("## Side (alongside)\n")
+        lines.append("Alternative prompts at the same level of abstraction.\n")
+        lines.extend(_build_md_tree(tree["side"], prompt))
+        lines.append("")
+
+    # Sub section (below root) — closest to root first
+    if "sub" in tree and tree["sub"]:
+        lines.append("---\n")
+        lines.append("## Sub (below)\n")
+        lines.append("Focused subprompts that decompose the root into specifics.\n")
+        lines.extend(_build_md_tree(tree["sub"], prompt))
+        lines.append("")
+
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
+    return path
+
+
+def _run_prompt_tree(prompt, model, sub_n=None, super_n=None, side_n=None,
+                     output_model=None, save_dir=None, concurrency=5):
+    """Execute the prompt tree pipeline."""
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+    from rich.console import Console
+    from .prompt_space import prompt_tree, research_tree
+
+    console = Console()
+
+    if not save_dir:
+        save_dir = os.path.join("output", _prompt_to_slug(prompt))
+
+    # Show config
+    console.print(f"\n[bold]Building prompt tree...[/bold]")
+    console.print(f"  [dim]Tree model: {model}[/dim]")
+    if output_model:
+        console.print(f"  [dim]Output model: {output_model}[/dim]")
+    console.print(f"  [dim]Output folder: {save_dir}/[/dim]")
+
+    # Phase 1: Build tree
+    tree = prompt_tree(
+        prompt, sub_n=sub_n, super_n=super_n, side_n=side_n,
+        model=model, viz=True, v=True,
+    )
+
+    # Count results
+    total = 1
+    for direction in ("sub", "super", "side"):
+        if direction in tree:
+            total += len(tree[direction])
+    console.print(f"\n[bold green]{total} prompts generated.[/bold green]")
+
+    # Save tree markdown
+    tree_path = os.path.join(save_dir, "tree.md")
+    _write_tree_md(tree, tree_path, model, sub_n, super_n, side_n, output_model=output_model)
+    console.print(f"  [dim]{tree_path}[/dim]")
+
+    # Save graph visualization
+    graph = tree.get("graph")
+    if graph:
+        graph_path = os.path.join(save_dir, "tree")
+        graph.render(graph_path, cleanup=True)
+        console.print(f"  [dim]{graph_path}.svg[/dim]")
+
+    # Phase 2: Generate outputs (if requested)
+    if output_model:
+        console.print(f"\n[bold]Generating outputs for {total} prompts...[/bold]")
+        result = research_tree(
+            tree,
+            output_model=output_model,
+            search="auto",
+            save=save_dir,
+            v=True,
+        )
+        output_count = len(result.get("outputs", []))
+        console.print(f"\n[bold green]{output_count} outputs saved.[/bold green]")
+        saved = result.get("saved", [])
+        if saved:
+            console.print(f"  [dim]{os.path.dirname(saved[0])}/[/dim]")
+
+
 def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
                            save_dir=None, concurrency=5):
     """Execute the prompt manipulation pipeline."""
@@ -1019,6 +1208,162 @@ def _interactive_main():
             providers = _get_providers()
             if providers:
                 console.print(f"  [dim]{len(providers)} provider(s): {', '.join(providers)}[/dim]\n")
+        elif mode == "tree":
+            prompt = questionary.text(
+                "Enter your prompt:",
+                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+            ).ask()
+            if prompt is None:
+                continue
+
+            console.print("\n[bold]Configure tree directions[/bold]\n")
+
+            # --- Sub ---
+            console.print("  [bold cyan]Sub (Decomposition)[/bold cyan]")
+            console.print("  [dim]Breaks your prompt into narrower, focused subprompts — goes DOWN into specifics.[/dim]\n")
+            sub_depth = questionary.text(
+                "  How many levels deep? (0 to skip):",
+                default="1",
+                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
+            ).ask()
+            if sub_depth is None:
+                continue
+            sub_n = None
+            sub_depth = int(sub_depth.strip())
+            if sub_depth > 0:
+                sub_n = []
+                for level in range(sub_depth):
+                    default = "5" if level == 0 else "3"
+                    count = questionary.text(
+                        f"  Prompts at level {level + 1}?",
+                        default=default,
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
+                    ).ask()
+                    if count is None:
+                        sub_n = None
+                        break
+                    sub_n.append(int(count.strip()))
+                if sub_n is not None and len(sub_n) != sub_depth:
+                    continue
+
+            # --- Super ---
+            console.print("\n  [bold red]Super (Abstraction)[/bold red]")
+            console.print("  [dim]Generates broader parent prompts that contain yours — goes UP in abstraction.[/dim]\n")
+            super_depth = questionary.text(
+                "  How many levels deep? (0 to skip):",
+                default="1",
+                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
+            ).ask()
+            if super_depth is None:
+                continue
+            super_n = None
+            super_depth = int(super_depth.strip())
+            if super_depth > 0:
+                super_n = []
+                for level in range(super_depth):
+                    default = "3"
+                    count = questionary.text(
+                        f"  Prompts at level {level + 1}?",
+                        default=default,
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
+                    ).ask()
+                    if count is None:
+                        super_n = None
+                        break
+                    super_n.append(int(count.strip()))
+                if super_n is not None and len(super_n) != super_depth:
+                    continue
+
+            # --- Side ---
+            console.print("\n  [bold green]Side (Lateral)[/bold green]")
+            console.print("  [dim]Creates alternative prompts at the same level — goes SIDEWAYS to explore parallels.[/dim]\n")
+            side_depth = questionary.text(
+                "  How many levels deep? (0 to skip):",
+                default="1",
+                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
+            ).ask()
+            if side_depth is None:
+                continue
+            side_n = None
+            side_depth = int(side_depth.strip())
+            if side_depth > 0:
+                side_n = []
+                for level in range(side_depth):
+                    default = "4"
+                    count = questionary.text(
+                        f"  Prompts at level {level + 1}?",
+                        default=default,
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
+                    ).ask()
+                    if count is None:
+                        side_n = None
+                        break
+                    side_n.append(int(count.strip()))
+                if side_n is not None and len(side_n) != side_depth:
+                    continue
+
+            # Validate at least one direction
+            if sub_n is None and super_n is None and side_n is None:
+                console.print("[yellow]At least one direction must have depth > 0.[/yellow]\n")
+                continue
+
+            # Show total count
+            console.print("")
+            total = 1
+            for label, n_list in [("Sub", sub_n), ("Super", super_n), ("Side", side_n)]:
+                if n_list:
+                    count, breakdown = _calculate_tree_count(n_list)
+                    if " + " in breakdown:
+                        console.print(f"  [dim]{label}: {breakdown} = {count}[/dim]")
+                    else:
+                        console.print(f"  [dim]{label}: {count}[/dim]")
+                    total += count
+            console.print(f"\n  [bold]{total} total prompts[/bold] will be generated\n")
+
+            # Tree-building model
+            console.print("[bold]Select tree-building model[/bold] (for generating prompts):")
+            model = _select_model(None)
+            if model is None:
+                continue
+
+            # Output option (pairwise evaluate pattern)
+            opts = questionary.checkbox(
+                "Options:",
+                choices=[
+                    questionary.Choice(
+                        "Generate LLM outputs for every prompt in the tree",
+                        value="outputs",
+                        checked=False,
+                    ),
+                ],
+            ).ask()
+            if opts is None:
+                continue
+            generate_outputs = "outputs" in opts
+
+            output_model = None
+            if generate_outputs:
+                console.print("\n[bold]Select output model[/bold] (for generating responses):")
+                output_model = _select_model(None)
+                if output_model is None:
+                    continue
+
+            # Output folder
+            default_dir = os.path.join("output", _prompt_to_slug(prompt))
+            save_dir = questionary.text(
+                "Output folder:",
+                default=default_dir,
+            ).ask()
+            if save_dir is None:
+                continue
+
+            _run_prompt_tree(
+                prompt.strip(), model,
+                sub_n=sub_n, super_n=super_n, side_n=side_n,
+                output_model=output_model,
+                save_dir=save_dir.strip(),
+            )
+            break
         else:
             console.print(f"\n[dim]{mode} — coming soon[/dim]\n")
 
