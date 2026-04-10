@@ -1054,63 +1054,94 @@ def _interactive_main():
             break
 
         if mode == "research":
-            prompt = questionary.text(
-                "Research topic:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a topic",
-            ).ask()
-            if prompt is None:
-                continue
-            model = _select_model(None)
-            if model is None:
+            step = 0
+            prompt = model = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Research topic:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a topic",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    model = _select_model(None)
+                    if model is None:
+                        step = 0
+                    else:
+                        step = 2
+                else:
+                    break
+            if step < 0:
                 continue
             _run_research(prompt.strip(), model, save_dir=None, no_view=False)
             break
         elif mode == "prompt":
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
+            step = 0
+            prompt = selected = model = generate_outputs = output_model = save_dir = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    selected = _select_transforms(checked_default=True)
+                    if selected is None:
+                        step = 0
+                    elif not selected:
+                        console.print("[yellow]No transforms selected.[/yellow]\n")
+                    else:
+                        from .prompt_probe import list_transforms
+                        all_transforms = list_transforms(v=False)
+                        console.print(f"\n  [bold]{len(selected)}[/bold] of {len(all_transforms)} transforms selected\n")
+                        step = 2
+                elif step == 2:
+                    console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
+                    model = _select_model(None)
+                    if model is None:
+                        step = 1
+                    else:
+                        step = 3
+                elif step == 3:
+                    generate_outputs = questionary.confirm(
+                        "Generate outputs too?",
+                        default=False,
+                    ).ask()
+                    if generate_outputs is None:
+                        step = 2
+                    elif generate_outputs:
+                        step = 4
+                    else:
+                        output_model = None
+                        step = 5
+                elif step == 4:
+                    console.print("\n[bold]Select output model[/bold] (for generating responses):")
+                    output_model = _select_model(None)
+                    if output_model is None:
+                        step = 3
+                    else:
+                        step = 5
+                elif step == 5:
+                    default_dir = os.path.join("output", _prompt_to_slug(prompt))
+                    save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if save_dir is None:
+                        step = 4 if generate_outputs else 3
+                    else:
+                        step = 6
+                else:
+                    break
+            if step < 0:
                 continue
-
-            selected = _select_transforms(checked_default=True)
-            if selected is None:
-                continue
-            if not selected:
-                console.print("[yellow]No transforms selected.[/yellow]\n")
-                continue
-
-            from .prompt_probe import list_transforms
-            all_transforms = list_transforms(v=False)
-            console.print(f"\n  [bold]{len(selected)}[/bold] of {len(all_transforms)} transforms selected\n")
-
-            console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
-            model = _select_model(None)
-            if model is None:
-                continue
-
-            generate_outputs = questionary.confirm(
-                "Generate outputs too?",
-                default=False,
-            ).ask()
-            if generate_outputs is None:
-                continue
-
-            output_model = None
-            if generate_outputs:
-                console.print("\n[bold]Select output model[/bold] (for generating responses):")
-                output_model = _select_model(None)
-                if output_model is None:
-                    continue
-
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
             _run_prompt_manipulate(
                 prompt.strip(), model,
                 transforms=selected,
@@ -1118,45 +1149,65 @@ def _interactive_main():
                 save_dir=save_dir.strip(),
             )
         elif mode == "compare":
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
+            step = 0
+            prompt = models = run_eval = eval_model = save_dir = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    models = _select_compare_models()
+                    if models is None:
+                        step = 0
+                    else:
+                        step = 2
+                elif step == 2:
+                    eval_opts = questionary.checkbox(
+                        "Options:",
+                        choices=[
+                            questionary.Choice(
+                                "Enable Pairwise Model Evaluation of Responses",
+                                value="evaluate",
+                                checked=False,
+                            ),
+                        ],
+                    ).ask()
+                    if eval_opts is None:
+                        step = 1
+                    else:
+                        run_eval = "evaluate" in eval_opts
+                        if run_eval:
+                            step = 3
+                        else:
+                            eval_model = None
+                            step = 4
+                elif step == 3:
+                    console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
+                    eval_model = _select_model(None)
+                    if eval_model is None:
+                        step = 2
+                    else:
+                        step = 4
+                elif step == 4:
+                    default_dir = os.path.join("output", _prompt_to_slug(prompt))
+                    save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if save_dir is None:
+                        step = 3 if run_eval else 2
+                    else:
+                        step = 5
+                else:
+                    break
+            if step < 0:
                 continue
-            models = _select_compare_models()
-            if models is None:
-                continue
-
-            eval_opts = questionary.checkbox(
-                "Options:",
-                choices=[
-                    questionary.Choice(
-                        "Enable Pairwise Model Evaluation of Responses",
-                        value="evaluate",
-                        checked=False,
-                    ),
-                ],
-            ).ask()
-            if eval_opts is None:
-                continue
-            run_eval = "evaluate" in eval_opts
-
-            eval_model = None
-            if run_eval:
-                console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
-                eval_model = _select_model(None)
-                if eval_model is None:
-                    continue
-
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
             _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=save_dir.strip())
             break
         elif mode == "grid":
@@ -1165,53 +1216,68 @@ def _interactive_main():
             console.print("  generates all responses, then uses [bold]pairwise evaluation[/bold]")
             console.print("  to rank and find the best combination.\n")
 
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
+            step = 0
+            prompt = models = selected_transforms = eval_model = save_dir = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    models = _select_compare_models()
+                    if models is None:
+                        step = 0
+                    else:
+                        step = 2
+                elif step == 2:
+                    selected_transforms = _select_transforms(checked_default=False)
+                    if selected_transforms is None:
+                        step = 1
+                    elif not selected_transforms:
+                        console.print("[yellow]No transforms selected.[/yellow]\n")
+                    else:
+                        # Grid summary
+                        n_models = len(models)
+                        n_transforms = len(selected_transforms)
+                        n_cells = n_transforms * n_models + n_models
+                        if n_cells <= 5:
+                            n_pairs = n_cells * (n_cells - 1) // 2
+                        else:
+                            all_possible = n_cells * (n_cells - 1) // 2
+                            n_pairs = min(all_possible, n_cells * 5)
+                        n_eval_calls = n_pairs * 2
+
+                        console.print(f"\n[bold]Grid summary:[/bold]")
+                        console.print(f"  {n_transforms} transforms x {n_models} models = {n_transforms * n_models} cells (+{n_models} original)")
+                        console.print(f"  Total responses to generate: [bold]{n_cells}[/bold]")
+                        console.print(f"  Pairwise comparisons: [bold]{n_pairs}[/bold] ({n_eval_calls} LLM eval calls with position swap)\n")
+                        step = 3
+                elif step == 3:
+                    console.print("[dim]Select a model to judge the evaluation:[/dim]")
+                    eval_model = _select_model(None)
+                    if eval_model is None:
+                        step = 2
+                    else:
+                        step = 4
+                elif step == 4:
+                    default_dir = os.path.join("output", _prompt_to_slug(prompt))
+                    save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if save_dir is None:
+                        step = 3
+                    else:
+                        step = 5
+                else:
+                    break
+            if step < 0:
                 continue
-
-            models = _select_compare_models()
-            if models is None:
-                continue
-
-            selected_transforms = _select_transforms(checked_default=False)
-            if selected_transforms is None:
-                continue
-            if not selected_transforms:
-                console.print("[yellow]No transforms selected.[/yellow]\n")
-                continue
-
-            # Grid summary
-            n_models = len(models)
-            n_transforms = len(selected_transforms)
-            n_cells = n_transforms * n_models + n_models  # transform cells + original cells
-            if n_cells <= 5:
-                n_pairs = n_cells * (n_cells - 1) // 2
-            else:
-                all_possible = n_cells * (n_cells - 1) // 2
-                n_pairs = min(all_possible, n_cells * 5)
-            n_eval_calls = n_pairs * 2  # position swap
-
-            console.print(f"\n[bold]Grid summary:[/bold]")
-            console.print(f"  {n_transforms} transforms x {n_models} models = {n_transforms * n_models} cells (+{n_models} original)")
-            console.print(f"  Total responses to generate: [bold]{n_cells}[/bold]")
-            console.print(f"  Pairwise comparisons: [bold]{n_pairs}[/bold] ({n_eval_calls} LLM eval calls with position swap)\n")
-
-            console.print("[dim]Select a model to judge the evaluation:[/dim]")
-            eval_model = _select_model(None)
-            if eval_model is None:
-                continue
-
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
             _run_grid_search(
                 prompt.strip(), models, selected_transforms,
                 eval_model=eval_model, save_dir=save_dir.strip(),
