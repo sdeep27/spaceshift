@@ -332,184 +332,6 @@ def _select_model(model_arg):
     return answer
 
 
-def _build_tree_dict(prompt, agent_result):
-    """Convert agent's flat {subprompts, superprompts, sideprompts} to prompt_tree format."""
-    tree = {"prompt": prompt}
-    for direction, key in [("sub", "subprompts"), ("super", "superprompts"), ("side", "sideprompts")]:
-        prompts = agent_result.get(key, [])
-        if prompts:
-            tree[direction] = [
-                {"prompt": p, "depth": 0, "parent": prompt, "id": f"{direction}_{i}", "direction": direction}
-                for i, p in enumerate(prompts)
-            ]
-    return tree
-
-
-def _run_research(prompt, model, save_dir, no_view):
-    """Execute the full research pipeline."""
-    import warnings
-    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
-
-    from rich.console import Console
-    from .LLM import LLM
-    from .prompt_space import subprompt, superprompt, sideprompt, research_tree
-
-    console = Console()
-
-    # Step 1: Agentic prompt tree generation
-    console.print(f"\n[bold]Building prompt tree...[/bold]")
-
-    def explore_paths(subject: str, sub_n: int = 5, super_n: int = 5, side_n: int = 3) -> dict:
-        """Generate exploration paths for a research subject.
-
-        Args:
-            subject: The topic to explore.
-            sub_n: Number of sub-prompts to generate (drill deeper into specifics).
-            super_n: Number of super-prompts to generate (zoom out to broader context).
-            side_n: Number of side-prompts to generate (lateral/parallel perspectives).
-
-        Returns:
-            dict with subprompts, superprompts, and sideprompts arrays.
-        """
-        console.print(f"  [dim]explore_paths: generating {sub_n} sub, {super_n} super, {side_n} side prompts...[/dim]")
-        subs = subprompt(subject, n=sub_n, model=model, v=False)
-        supers = superprompt(subject, n=super_n, model=model, v=False)
-        sides = sideprompt(subject, n=side_n, model=model, v=False)
-        console.print(f"  [green]Got {len(subs)} sub, {len(supers)} super, {len(sides)} side prompts[/green]")
-        return {"subprompts": subs, "superprompts": supers, "sideprompts": sides}
-
-    agent = LLM(model=model, v=False)
-    agent.tools(fns=[explore_paths], tool_choice="required_then_auto", max_turns=5)
-    agent.sys(
-        "You are a research planner with access to a prompt exploration tool. "
-        "Given a subject, use the explore_paths tool to generate exploration paths, "
-        "then analyze the results and add any paths the tool missed. "
-        "Return your final comprehensive map as JSON with keys: subprompts, superprompts, sideprompts — each an array of prompt strings."
-    )
-    tree_prompts = agent.user(f"Map all exploration paths for: {prompt}").result_json()
-
-    sub_count = len(tree_prompts.get("subprompts", []))
-    super_count = len(tree_prompts.get("superprompts", []))
-    side_count = len(tree_prompts.get("sideprompts", []))
-    console.print(f"  [bold green]Final tree: {sub_count} sub, {super_count} super, {side_count} side prompts[/bold green]\n")
-
-    # Show the prompts
-    for direction, key in [("sub", "subprompts"), ("super", "superprompts"), ("side", "sideprompts")]:
-        prompts = tree_prompts.get(key, [])
-        if prompts:
-            console.print(f"  [bold]{direction}[/bold] ({len(prompts)}):")
-            for p in prompts:
-                console.print(f"    [dim]{p[:90]}{'...' if len(p) > 90 else ''}[/dim]")
-
-    # Step 2: Build tree dict and run research_tree
-    tree_dict = _build_tree_dict(prompt, tree_prompts)
-
-    console.print(f"\n[bold]Generating research outputs...[/bold]")
-    result = research_tree(
-        tree_dict,
-        output_model=model,
-        search="auto",
-        save=save_dir if save_dir else True,
-        v=True,
-    )
-
-    save_path = result.get("saved", [])
-    if save_path:
-        import os
-        output_dir = os.path.dirname(save_path[0]) if save_path else None
-    else:
-        output_dir = None
-
-    total = len(result.get("outputs", []))
-    console.print(f"\n[bold green]Done! {total} research outputs generated.[/bold green]")
-    if output_dir:
-        console.print(f"[dim]Saved to: {output_dir}/[/dim]")
-
-    # Step 3: Post-process research outputs
-    if output_dir:
-        _post_process_research(output_dir, model, verbose=True)
-
-    # Step 4: Open viewer
-    if not no_view and output_dir:
-        console.print(f"\n[bold]Opening viewer...[/bold]\n")
-        view(output_dir)
-
-
-def _post_process_research(output_dir, model, verbose=True):
-    """Post-process research outputs to generate synthesis documents."""
-    from rich.console import Console
-    from .LLM import LLM
-    from .tools import ResearchTools
-
-    console = Console()
-
-    console.print("\n[bold cyan]Post-processing research outputs...[/bold cyan]")
-
-    # Create research tools scoped to output directory
-    rt = ResearchTools(output_dir)
-
-    # Create agent with research tools
-    agent = LLM(model=model, v=verbose)
-    agent.tools(fns=rt.all_tools(), tool_choice="required_then_auto", max_turns=20)
-
-    # Clear deliverables, autonomous approach
-    agent.sys(
-        "You are a research synthesizer. Analyze all research outputs in this directory and create comprehensive synthesis documents.\n\n"
-        "The directory contains markdown files with YAML frontmatter. Each file has metadata like direction (root/sub/super/side), "
-        "depth, prompt, and parent - forming a research tree structure.\n\n"
-        "TOOL USAGE:\n"
-        "- Use read() to read markdown files (read one file at a time)\n"
-        "- Use ls() and find() to discover files\n"
-        "- Use grep() to search file contents\n"
-        "- Use write() to create new synthesis documents\n"
-        "- Use bash() ONLY for text processing (wc, sort, uniq, diff, etc.) - NOT for reading files\n"
-        "- bash() blocks shell operators (&&, ||, ;) for security\n\n"
-        "Create these synthesis documents:\n\n"
-        "1. COMPREHENSIVE REPORT (_REPORT.md) - A long, detailed synthesis:\n"
-        "   - Synthesize ALL findings across the research tree\n"
-        "   - Identify key themes, patterns, and insights\n"
-        "   - Create narrative flow connecting different research nodes\n"
-        "   - Include specific examples and quotes from source files\n"
-        "   - Should be substantial - aim for depth and completeness\n\n"
-        "2. EXECUTIVE SUMMARY (_SUMMARY.md):\n"
-        "   - High-level overview\n"
-        "   - Most important takeaways\n"
-        "   - For someone who wants the essence without details\n\n"
-        "3. GLOSSARY (_GLOSSARY.md):\n"
-        "   - Key terms, concepts, and acronyms from the research\n"
-        "   - Alphabetically organized\n"
-        "   - Brief definitions with context\n\n"
-        "4. THEMATIC INDEX (_THEMES.md):\n"
-        "   - Organize all research files by theme/topic\n"
-        "   - Include markdown links to relevant files\n"
-        "   - Help readers navigate to specific areas of interest\n\n"
-        "All outputs should use markdown with YAML frontmatter."
-    )
-
-    # Execute synthesis
-    agent.user(f"Synthesize the research outputs in {output_dir}.").chat()
-
-    console.print("[bold green]✓ Post-processing complete[/bold green]")
-
-
-def _run_agent(prompt, model, save_dir, no_view):
-    """Execute the autonomous research agent."""
-    from rich.console import Console
-    from .research_agent import research_agent
-
-    console = Console()
-    console.print(f"\n[bold]Starting research agent...[/bold]\n")
-
-    result = research_agent(prompt, model=model, save=save_dir or True, v=True)
-
-    output_dir = result.get("output_dir")
-    if output_dir:
-        console.print(f"\n[dim]Output: {output_dir}/[/dim]")
-    if not no_view and output_dir:
-        console.print(f"\n[bold]Opening viewer...[/bold]\n")
-        view(output_dir)
-
-
 def _prompt_to_slug(prompt, max_len=40):
     """Convert a prompt to a filesystem-safe slug for directory naming."""
     import re
@@ -1029,7 +851,7 @@ def _interactive_main():
     from rich.console import Console
     console = Console()
 
-    console.print("\n[bold]spaceshift[/bold] [dim]— open research toolkit[/dim]\n")
+    console.print("\n[bold]spaceshift[/bold] [dim]— prompt exploration toolkit[/dim]\n")
 
     # Show current providers
     providers = _get_providers()
@@ -1040,7 +862,6 @@ def _interactive_main():
         mode = questionary.select(
             "What would you like to do?",
             choices=[
-                Choice("Deep Research", value="research"),
                 Choice("Prompt Manipulate", value="prompt"),
                 Choice("Compare Models", value="compare"),
                 Choice("Grid Search and Evaluation", value="grid"),
@@ -1053,19 +874,7 @@ def _interactive_main():
         if mode is None:
             break
 
-        if mode == "research":
-            prompt = questionary.text(
-                "Research topic:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a topic",
-            ).ask()
-            if prompt is None:
-                continue
-            model = _select_model(None)
-            if model is None:
-                continue
-            _run_research(prompt.strip(), model, save_dir=None, no_view=False)
-            break
-        elif mode == "prompt":
+        if mode == "prompt":
             prompt = questionary.text(
                 "Enter your prompt:",
                 validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
@@ -1240,19 +1049,6 @@ def main():
     v.add_argument("--port", type=int, default=8383, help="Port (default: 8383)")
     v.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
 
-    # research subcommand (direct shortcut)
-    r = sub.add_parser("research", help="Run a full research pipeline on a topic")
-    r.add_argument("prompt", help="Research topic or question")
-    r.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Interactive picker if omitted.")
-    r.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
-    r.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
-
-    # synthesize subcommand
-    s = sub.add_parser("synthesize", help="Run synthesis agent on research outputs")
-    s.add_argument("directory", nargs="?", default=".", help="Directory containing markdown files (default: current)")
-    s.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Uses rank 1 if omitted.")
-    s.add_argument("--view", action="store_true", help="Open viewer after synthesis")
-
     # compare subcommand
     c = sub.add_parser("compare", help="Compare a prompt across multiple models")
     c.add_argument("prompt", help="Prompt to compare across models")
@@ -1260,13 +1056,6 @@ def main():
     c.add_argument("--evaluate", "-e", action="store_true", help="Run pairwise evaluation after generating responses")
     c.add_argument("--eval-model", default=None, help="Model to use for pairwise evaluation (default: rank 1)")
     c.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
-
-    # agent subcommand (dev/testing — not in interactive menu)
-    a = sub.add_parser("agent", help="Run autonomous research agent on a topic")
-    a.add_argument("prompt", help="Research topic or question")
-    a.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Interactive picker if omitted.")
-    a.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
-    a.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
 
     # manipulate subcommand
     m = sub.add_parser("manipulate", help="Apply prompt transforms and optionally generate outputs")
@@ -1280,33 +1069,11 @@ def main():
 
     if args.command == "view":
         view(args.path, args.port, args.no_open)
-    elif args.command == "research":
-        # Ensure API keys before running research
-        _ensure_api_keys()
-        model = _select_model(args.model)
-        if model is None:
-            raise SystemExit(0)
-        _run_research(args.prompt, model, args.save, args.no_view)
     elif args.command == "compare":
         _ensure_api_keys()
         models = args.models or _select_default_compare_models(3)
         save_dir = args.save or os.path.join("output", _prompt_to_slug(args.prompt))
         _run_compare(args.prompt, models, args.evaluate, args.eval_model, save_dir)
-    elif args.command == "agent":
-        _ensure_api_keys()
-        model = _select_model(args.model)
-        if model is None:
-            raise SystemExit(0)
-        _run_agent(args.prompt, model, args.save, args.no_view)
-    elif args.command == "synthesize":
-        # Ensure API keys before running synthesis
-        _ensure_api_keys()
-        model = _select_model(args.model) if args.model else _select_model("1")
-        if model is None:
-            raise SystemExit(0)
-        _post_process_research(args.directory, model, verbose=True)
-        if args.view:
-            view(args.directory)
     elif args.command == "manipulate":
         # Handle --transforms list
         if args.transforms and args.transforms == ["list"]:

@@ -1,6 +1,6 @@
 # Changelog
 
-**spaceshift** is an open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
+**spaceshift** is an open prompt exploration toolkit powered by LLMs. Manipulate prompts through transforms, navigate the full space of perspectives, and evaluate across prompts and models to find what works best.
 
 ---
 

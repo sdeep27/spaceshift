@@ -7,7 +7,7 @@ export default defineConfig({
     starlight({
       title: "spaceshift",
       description:
-        "An open research toolkit powered by LLMs. Branch, navigate, evaluate.",
+        "An open prompt exploration toolkit powered by LLMs. Manipulate, explore, evaluate.",
       customCss: ["./src/styles/custom.css"],
       social: [
         {
@@ -45,15 +45,13 @@ export default defineConfig({
           ],
         },
         {
-          label: "Research",
+          label: "Exploration",
           items: [
             { label: "Overview", slug: "research/overview" },
             {
               label: "Directional Exploration",
               slug: "research/directional-exploration",
             },
-            { label: "Research Tree", slug: "research/research-tree" },
-            { label: "Research Expand", slug: "research/research-expand" },
             { label: "Prompt Transforms", slug: "research/prompt-transforms" },
             {
               label: "Language Transform",

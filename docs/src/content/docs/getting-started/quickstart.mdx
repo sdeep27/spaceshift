@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: A 5-minute tour from basic LLM usage to research trees.
+description: A 5-minute tour from basic LLM usage to prompt exploration.
 ---
 
-A 5-minute tour from basic LLM calls to full research tree exploration.
+A 5-minute tour from basic LLM calls to prompt exploration and evaluation.
 
 ## Basic LLM Usage
 
@@ -20,27 +20,32 @@ sentiment = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").u
 sentiment.run("I love this product!")    # {"sentiment": "positive"}
 ```
 
-## Research Tree
+## Prompt Tree
+
+Explore a topic in all directions — sub, super, and side:
 
 ```python
-from spaceshift import research_tree
+from spaceshift import prompt_tree
 
-result = research_tree(
+tree = prompt_tree(
     "What are the second-order effects of AI on labor markets?",
-    sub_n=[5, 3],
+    sub_n=[5],
     super_n=[3],
     side_n=[3],
+    viz=True,
 )
 ```
 
-## Recursive Research Expand
+## Prompt Transform
+
+Apply transforms to explore prompt variations:
 
 ```python
-from spaceshift import research_expand
+from spaceshift import prompt_transform
 
-result = research_expand(
+result = prompt_transform(
     "What are the second-order effects of AI on labor markets?",
-    depth=2,
+    transform="inverse",
 )
 ```
 
@@ -51,6 +56,6 @@ result = research_expand(
 - LLM as function with `{placeholders}` and `.run()`
 - Structured JSON output with `.run()` / `.chat(json=True)`
 - Multi-turn conversation chaining
-- First `research_tree` call
-- First `research_expand` call — recursive depth-based exploration
+- First `prompt_tree` call — directional exploration
+- First `prompt_transform` call — prompt manipulation
 - What the output files look like

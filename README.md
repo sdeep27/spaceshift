@@ -1,6 +1,6 @@
 # spaceshift
 
-An interactive CLI research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
+An interactive CLI prompt exploration toolkit powered by LLMs. Manipulate prompts through transforms, navigate the full space of perspectives, and evaluate across prompts and models to find what works best.
 
 **[Full documentation at spcshft.com](https://spcshft.com)**
 
@@ -9,7 +9,6 @@ An interactive CLI research toolkit powered by LLMs. Branch into questions throu
 spaceshift
 
 # Select from guided menus:
-# → Deep Research — decompose topics across all angles
 # → Prompt Manipulate — explore prompt transformations
 # → Compare Models — rank model responses
 # → Grid Search — search across models × transforms
@@ -61,16 +60,13 @@ spaceshift
 ```
 
 The CLI guides you through:
-- **Deep Research** — Decompose a topic and explore all angles (sub/super/side directions)
 - **Prompt Manipulate** — Transform prompts and explore variations
 - **Compare Models** — Run the same prompt across models and rank responses
 - **Grid Search** — Search across models × transforms simultaneously
 - **Prompt Tree** — Visualize the exploration space
 - **Manage API Keys** — Add, update, or view your configured API providers
 
-Select your research mode, pick a model from categorized rankings (optimal, best, fast, cheap, open), enter your prompt, and let spaceshift generate comprehensive research outputs. Results are saved as structured markdown with YAML frontmatter, and the built-in viewer opens automatically.
-
-After research completes, an autonomous agent post-processes all outputs to generate synthesis documents that help you understand the overall findings. The agent reads all markdown files, analyzes the tree structure, and decides what synthesis documents would be most valuable — updating you on progress along the way.
+Pick a model from categorized rankings (optimal, best, fast, cheap, open), enter your prompt, and explore. Results are saved as structured markdown with YAML frontmatter, and the built-in viewer opens automatically.
 
 ---
 
@@ -90,4 +86,4 @@ Two-panel layout: sidebar with smart-sorted file list, content area with rendere
 
 While spaceshift is designed as a CLI tool, advanced users can import and use the underlying modules programmatically. **This is unsupported** — the CLI is the primary interface, and internal APIs may change without notice.
 
-For those who want to explore anyway, the main modules are in `spaceshift/` including `LLM`, `research_tree`, `compare_models`, `grid_search`, etc. See the source code for details.
+For those who want to explore anyway, the main modules are in `spaceshift/` including `LLM`, `prompt_tree`, `compare_models`, `grid_search`, etc. See the source code for details.

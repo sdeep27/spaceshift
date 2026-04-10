@@ -11,7 +11,6 @@ from .grid_search import grid_search
 from .viewer import view
 from .utils import to_md
 from .tools import ResearchTools
-from .research_agent import research_agent
 
 
 # Exports commented out — not a supported public API

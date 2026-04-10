@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "spaceshift"
 version = "1.1.1"
-description = "Interactive CLI research toolkit powered by LLMs. Branch into questions through tree structures, navigate perspectives, compare models, and explore the full space of possible answers."
+description = "Interactive CLI prompt exploration toolkit powered by LLMs. Manipulate prompts through transforms, navigate perspectives, compare models, and evaluate across the full space of possible answers."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "Deep Pulusani", email = "deep.pulusani@gmail.com" },
 ]
-keywords = ["cli", "research", "llm", "ai", "prompt-engineering", "evaluation", "interactive", "openai", "anthropic"]
+keywords = ["cli", "exploration", "llm", "ai", "prompt-engineering", "prompt-transforms", "evaluation", "interactive", "openai", "anthropic"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
