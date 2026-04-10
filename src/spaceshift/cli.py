@@ -915,17 +915,20 @@ def _interactive_main():
                 "translate_arabic": "Translate to Arabic",
             }
 
-            console.print(f"\n  [dim]({len(all_transforms)} transforms selected)[/dim]\n")
+            from questionary import Separator as Sep
+            transform_choices = [
+                Sep(f"  ({len(all_transforms)} transforms selected)"),
+            ] + [
+                questionary.Choice(
+                    f"{name:<20} {_TRANSFORM_HINTS.get(name, '')}",
+                    value=name,
+                    checked=True,
+                )
+                for name in all_transforms
+            ]
             selected = questionary.checkbox(
                 "Select transforms to apply:",
-                choices=[
-                    questionary.Choice(
-                        f"{name:<20} {_TRANSFORM_HINTS.get(name, '')}",
-                        value=name,
-                        checked=True,
-                    )
-                    for name in all_transforms
-                ],
+                choices=transform_choices,
             ).ask()
             if selected is None:
                 continue
