@@ -236,7 +236,30 @@ async function loadFile(path, el) {
   }
   html += '<div class="md-body">' + marked.parse(data.body) + '</div>';
   content.innerHTML = html;
+  addHeadingIds(content);
   renderMath(content);
+  // If URL already has a hash, scroll to it now that content is rendered
+  if (location.hash && location.hash.length > 1) {
+    const target = content.querySelector(location.hash);
+    if (target) target.scrollIntoView({ block: 'start' });
+  }
+}
+
+function slugify(s) {
+  return (s || '').toLowerCase().replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+}
+
+function addHeadingIds(root) {
+  const used = new Set();
+  root.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+    if (h.id) { used.add(h.id); return; }
+    let id = slugify(h.textContent);
+    if (!id) return;
+    let candidate = id, n = 1;
+    while (used.has(candidate)) candidate = id + '-' + (++n);
+    h.id = candidate;
+    used.add(candidate);
+  });
 }
 
 function renderMath(el) {
@@ -267,6 +290,19 @@ function escHtml(s) {
 
 async function init() {
   document.getElementById('root-path').textContent = document.title.replace('spaceshift viewer — ', '');
+  // Intercept in-page hash links so they scroll the .content div (which is the
+  // scroll container) rather than the window.
+  document.getElementById('content').addEventListener('click', (ev) => {
+    const a = ev.target.closest('a');
+    if (!a) return;
+    const href = a.getAttribute('href') || '';
+    if (!href.startsWith('#') || href.length < 2) return;
+    const target = document.querySelector(href);
+    if (!target) return;
+    ev.preventDefault();
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    history.replaceState(null, '', href);
+  });
   const resp = await fetch('/api/files');
   const files = await resp.json();
   if (files.length === 0) {

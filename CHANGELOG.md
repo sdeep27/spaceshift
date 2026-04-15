@@ -9,6 +9,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-04-15
+
+Major pivot: spaceshift is now an **interactive CLI prompt exploration toolkit**. The deep-research CLI surface is gone; the library has been rebuilt around five guided modes that branch, navigate, and evaluate prompts.
+
+### Added
+- **Interactive CLI** (`spaceshift`): launches a guided menu with five modes
+  - **Prompt Manipulate**: apply any of 22 built-in transforms (abstraction, inversion, reflection, rotation, dimension shifts, translations…) and optionally generate outputs for each variant. Includes an automatic `original` baseline.
+  - **Prompt Tree**: explore a prompt in three directions (sub/super/side), configure depth per direction, render a tree visualization
+  - **Prompt Chain**: build a multi-turn conversation by adding followups one at a time
+  - **Compare Models**: run one prompt across multiple models with optional pairwise evaluation (auto-generated or custom metrics)
+  - **Grid Search**: sweep models × transforms and rank every combination
+- **Built-in markdown viewer** (`spaceshift view <dir>`): two-panel browser UI with sidebar file list, YAML frontmatter cards, KaTeX math rendering, and anchor-link navigation
+- **Copy-pasteable `spaceshift view` hint** printed after every save so results open in one step from any cwd
+- **Global API key management**: first-run setup wizard writes to `~/.spaceshift/config.json`; editable from the main menu
+- **Step-back navigation**: every multi-step interactive flow supports going back to the previous question
+- **Per-response incremental save + Ctrl-C handling** in Prompt Manipulate — interrupting a run keeps completed outputs and marks pending ones
+- **Custom evaluation metrics** in pairwise eval (fall back to auto-generated metrics)
+
+### Changed
+- **BREAKING**: deep-research CLI (`cruise-research`, `research`, `research_expand`) and its docs have been removed. The underlying `research_tree` helper still exists but is unsupported — the CLI is the primary interface.
+- **`research_tree` remains available** as an advanced unsupported API for programmatic use
+- Grid search UX: no default model pre-selection, cleaner eval prompt, optimal-category summary
+- Transform-selection menu surfaces descriptions and a running count of selected transforms
+- Viewer: heading IDs added to rendered markdown and in-page hash links scroll the content pane (previously they did nothing)
+- Translate transforms run response through a back-translation phase so final output is in English
+
+### Fixed
+- `_enforce_json` no longer crashes when context contains brace-delimited tokens
+- Compare-models anchor links, eval toggle UX, and output-folder prompt
+- Translate-transform outputs now correctly return English (back-translation runs after the main output)
+
+---
+
 ## [1.1.0] - 2026-03-26
 
 ### Added

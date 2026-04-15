@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spaceshift"
-version = "1.1.1"
+version = "2.0.0"
 description = "Interactive CLI prompt exploration toolkit powered by LLMs. Manipulate prompts through transforms, navigate perspectives, compare models, and evaluate across the full space of possible answers."
 readme = "README.md"
 license = "MIT"

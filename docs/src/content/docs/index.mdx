@@ -1,9 +1,9 @@
 ---
 title: spaceshift
-description: An open research toolkit powered by LLMs. Branch, navigate, evaluate.
+description: Move through prompts in every direction. An interactive CLI prompt exploration toolkit.
 template: splash
 hero:
-  tagline: An open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
+  tagline: An interactive CLI prompt exploration toolkit powered by LLMs. Manipulate prompts through transforms, branch into trees, chain multi-turn conversations, and evaluate across prompts and models to find what works best.
   actions:
     - text: Quickstart
       link: /getting-started/quickstart/
@@ -17,19 +17,61 @@ hero:
 
 import { Card, CardGrid, Code } from "@astrojs/starlight/components";
 
-<Code code="pip install spaceshift" lang="bash" />
+<Code code={`pip install spaceshift\nspaceshift`} lang="bash" />
+
+<img src="/screenshots/home.png" alt="spaceshift main menu" style="border-radius: 8px; margin-top: 1.5rem;" />
+
+## Five modes
 
 <CardGrid>
-  <Card title="Branch" icon="list-format">
-    Decompose questions into tree structures. `research_tree` breaks a topic into subtopics, broader framings, and lateral perspectives — then generates responses for every node.
+  <Card title="Prompt Manipulate" icon="random">
+    Transform a prompt through 22 built-in operations — abstraction up/down, inversion, reflection, rotation, dimension shifts, translations — then optionally generate responses for each variant.
   </Card>
-  <Card title="Navigate" icon="random">
-    Move through the prompt space in three directions: **down** (subprompt), **up** (superprompt), **sideways** (sideprompt). Route through other languages to sample different reasoning.
+  <Card title="Prompt Tree" icon="list-format">
+    Explore a prompt in three directions: **sub** (decomposition), **super** (abstraction), **side** (lateral). Configure depth per direction and render the full tree.
   </Card>
-  <Card title="Evaluate" icon="approve-check-circle">
-    Find what works best. `compare_models` ranks responses across providers. `grid_search` searches models × transforms simultaneously. `pairwise_evaluate` ranks any set of outputs with bias mitigation.
+  <Card title="Prompt Chain" icon="rocket">
+    Build a multi-turn conversation by adding followups one at a time. Each turn runs with full prior context.
+  </Card>
+  <Card title="Compare Models" icon="approve-check-circle">
+    Run the same prompt across multiple models and rank responses with pairwise evaluation, auto-generated or custom metrics.
+  </Card>
+  <Card title="Grid Search" icon="setting">
+    Sweep across models × transforms simultaneously and rank every combination to find what works best.
   </Card>
 </CardGrid>
+
+---
+
+## Prompt Manipulate
+
+Pick from 22 built-in transforms — each one reshapes your prompt in a different way.
+
+<img src="/screenshots/prompt-manipulate.png" alt="Prompt Manipulate transform selection" style="border-radius: 8px;" />
+
+## Prompt Tree
+
+A guided wizard asks how deep to go in each direction and how many prompts to generate per level.
+
+<img src="/screenshots/prompt-tree.png" alt="Prompt Tree wizard" style="border-radius: 8px;" />
+
+## Prompt Chain
+
+Add followups one at a time. Leave blank to finish.
+
+<img src="/screenshots/prompt-chain.png" alt="Prompt Chain followups" style="border-radius: 8px;" />
+
+## Compare Models
+
+Pick models to compare, optionally add a judge for pairwise evaluation with auto-generated or custom metrics.
+
+<img src="/screenshots/compare-models.png" alt="Compare Models with pairwise evaluation" style="border-radius: 8px;" />
+
+---
+
+## Advanced: Python library
+
+While the CLI is the primary interface, the underlying modules are also importable:
 
 ```python
 from spaceshift import research_tree
@@ -37,8 +79,10 @@ from spaceshift import research_tree
 result = research_tree(
     "How do general-purpose technologies reshape economic structures?",
     sub_n=[5, 3],      # 5 subtopics, each split into 3 more
-    super_n=[5],        # 5 broader framings
-    side_n=[3],         # 3 lateral perspectives
-    search=True,        # web search for current information
+    super_n=[5],       # 5 broader framings
+    side_n=[3],        # 3 lateral perspectives
+    search=True,       # web search for current information
 )
 ```
+
+This is unsupported — internal APIs may change without notice.

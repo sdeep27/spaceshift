@@ -336,6 +336,248 @@ def _prompt_to_slug(prompt, max_len=40):
     return slug[:max_len].rstrip('_')
 
 
+def _print_view_hint(console, path):
+    """Print a copy-pasteable command for opening the saved path in the viewer.
+
+    For a file, hints at viewing the parent directory (since `spaceshift view`
+    serves a directory). For a directory, uses the path directly.
+    """
+    target = path
+    if os.path.isfile(target) or target.endswith(".md"):
+        target = os.path.dirname(target) or "."
+    abs_path = os.path.abspath(target)
+    console.print(f"[dim]View in browser:[/dim] [cyan]spaceshift view {abs_path}[/cyan]\n")
+
+
+def _calculate_tree_count(n_list):
+    """Total prompts for a direction given its n array. Returns (total, breakdown_str)."""
+    if not n_list:
+        return 0, ""
+    parts = []
+    running = 1
+    total = 0
+    for num in n_list:
+        running *= num
+        parts.append(str(running))
+        total += running
+    return total, " + ".join(parts)
+
+
+def _build_md_tree(nodes, root_prompt, reverse=False):
+    """Build indented dash lines from flat node list using parent references."""
+    children_of = {}
+    for node in nodes:
+        parent = node.get("parent", root_prompt)
+        children_of.setdefault(parent, []).append(node)
+
+    lines = []
+
+    def _recurse(parent_prompt, indent=0):
+        for child in children_of.get(parent_prompt, []):
+            prefix = "  " * indent + "- "
+            lines.append(f"{prefix}{child['prompt']}")
+            _recurse(child["prompt"], indent + 1)
+
+    if reverse:
+        top_level = children_of.get(root_prompt, [])
+        all_groups = []
+        for top_node in top_level:
+            group_lines = []
+            group_lines.append(f"- {top_node['prompt']}")
+            def _collect(parent_prompt, indent=1):
+                for child in children_of.get(parent_prompt, []):
+                    group_lines.append(f"{'  ' * indent}- {child['prompt']}")
+                    _collect(child["prompt"], indent + 1)
+            _collect(top_node["prompt"])
+            all_groups.append(group_lines)
+
+        for group in reversed(all_groups):
+            lines.extend(group)
+    else:
+        _recurse(root_prompt)
+
+    return lines
+
+
+def _write_tree_md(tree, path, model, sub_n, super_n, side_n, output_model=None):
+    """Write a consolidated tree.md with hierarchical dash formatting."""
+    from datetime import datetime
+
+    if not path.endswith(".md"):
+        path += ".md"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    prompt = tree["prompt"]
+
+    total = 1
+    for n_list in (sub_n, super_n, side_n):
+        if n_list:
+            count, _ = _calculate_tree_count(n_list)
+            total += count
+
+    meta_lines = ["---"]
+    meta_lines.append(f"original_prompt: \"{prompt}\"")
+    meta_lines.append(f"tree_model: {model}")
+    if output_model:
+        meta_lines.append(f"output_model: {output_model}")
+    meta_lines.append(f"date: {datetime.now().strftime('%Y-%m-%d')}")
+    meta_lines.append("directions:")
+    if sub_n:
+        meta_lines.append(f"  sub: {sub_n}")
+    if super_n:
+        meta_lines.append(f"  super: {super_n}")
+    if side_n:
+        meta_lines.append(f"  side: {side_n}")
+    meta_lines.append(f"total_prompts: {total}")
+    meta_lines.append("---")
+
+    lines = meta_lines + [""]
+    lines.append("# Prompt Tree\n")
+    lines.append(f"> **{prompt}**\n")
+
+    if "super" in tree and tree["super"]:
+        lines.append("---\n")
+        lines.append("## Super (above)\n")
+        lines.append("Broader prompts that contain the root as a subtopic.\n")
+        lines.extend(_build_md_tree(tree["super"], prompt, reverse=True))
+        lines.append("")
+
+    if "side" in tree and tree["side"]:
+        lines.append("---\n")
+        lines.append("## Side (alongside)\n")
+        lines.append("Alternative prompts at the same level of abstraction.\n")
+        lines.extend(_build_md_tree(tree["side"], prompt))
+        lines.append("")
+
+    if "sub" in tree and tree["sub"]:
+        lines.append("---\n")
+        lines.append("## Sub (below)\n")
+        lines.append("Focused subprompts that decompose the root into specifics.\n")
+        lines.extend(_build_md_tree(tree["sub"], prompt))
+        lines.append("")
+
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
+    return path
+
+
+def _run_prompt_tree(prompt, model, sub_n=None, super_n=None, side_n=None,
+                     output_model=None, save_dir=None, concurrency=5):
+    """Execute the prompt tree pipeline."""
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+    from rich.console import Console
+    from .prompt_space import prompt_tree, research_tree
+
+    console = Console()
+
+    if not save_dir:
+        save_dir = os.path.join("output", _prompt_to_slug(prompt))
+
+    console.print(f"\n[bold]Building prompt tree...[/bold]")
+    console.print(f"  [dim]Tree model: {model}[/dim]")
+    if output_model:
+        console.print(f"  [dim]Output model: {output_model}[/dim]")
+    console.print(f"  [dim]Output folder: {save_dir}/[/dim]")
+
+    tree = prompt_tree(
+        prompt, sub_n=sub_n, super_n=super_n, side_n=side_n,
+        model=model, viz=True, v=True,
+    )
+
+    total = 1
+    for direction in ("sub", "super", "side"):
+        if direction in tree:
+            total += len(tree[direction])
+    console.print(f"\n[bold green]{total} prompts generated.[/bold green]")
+
+    tree_path = os.path.join(save_dir, "tree.md")
+    _write_tree_md(tree, tree_path, model, sub_n, super_n, side_n, output_model=output_model)
+    console.print(f"  [dim]{tree_path}[/dim]")
+
+    graph = tree.get("graph")
+    if graph:
+        graph_path = os.path.join(save_dir, "tree")
+        graph.render(graph_path, cleanup=True)
+        console.print(f"  [dim]{graph_path}.svg[/dim]")
+
+    if output_model:
+        console.print(f"\n[bold]Generating outputs for {total} prompts...[/bold]")
+        result = research_tree(
+            tree,
+            output_model=output_model,
+            search="auto",
+            save=save_dir,
+            v=True,
+        )
+        output_count = len(result.get("outputs", []))
+        console.print(f"\n[bold green]{output_count} outputs saved.[/bold green]")
+        saved = result.get("saved", [])
+        if saved:
+            console.print(f"  [dim]{os.path.dirname(saved[0])}/[/dim]")
+
+    console.print()
+    _print_view_hint(console, save_dir)
+
+
+def _run_prompt_chain(prompts, model, save_dir=None):
+    """Run a sequence of user prompts as a multi-turn chat; save the whole discussion."""
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+    from datetime import datetime
+    from rich.console import Console
+    from .LLM import LLM
+
+    console = Console()
+
+    if not save_dir:
+        save_dir = os.path.join("output", _prompt_to_slug(prompts[0]))
+    os.makedirs(save_dir, exist_ok=True)
+    path = os.path.join(save_dir, "chain.md")
+
+    console.print(f"\n[bold]Running chain ({len(prompts)} turn(s))...[/bold]")
+    console.print(f"  [dim]Model: {model}[/dim]")
+    console.print(f"  [dim]Output: {path}[/dim]\n")
+
+    llm = LLM(model=model, v=False)
+    turns = []
+    for i, p in enumerate(prompts, 1):
+        console.print(f"[bold cyan]Turn {i}/{len(prompts)}[/bold cyan] [dim]{p[:80]}{'...' if len(p) > 80 else ''}[/dim]")
+        llm.user(p).chat()
+        reply = llm.last() or ""
+        turns.append((p, reply))
+        console.print(f"  [dim]{len(reply)} chars[/dim]")
+
+    # Build markdown
+    lines = ["---"]
+    lines.append(f"model: {model}")
+    lines.append(f"date: {datetime.now().strftime('%Y-%m-%d')}")
+    lines.append(f"turns: {len(prompts)}")
+    lines.append("---")
+    lines.append("")
+    lines.append("# Prompt Chain")
+    lines.append("")
+    for i, (user_msg, assistant_msg) in enumerate(turns, 1):
+        lines.append(f"## Turn {i}")
+        lines.append("")
+        lines.append("### User")
+        lines.append("")
+        lines.append(user_msg)
+        lines.append("")
+        lines.append("### Assistant")
+        lines.append("")
+        lines.append(assistant_msg)
+        lines.append("")
+
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
+
+    console.print(f"\n[bold green]Saved[/bold green] [dim]{path}[/dim]\n")
+    _print_view_hint(console, path)
+
+
 def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
                            save_dir=None, concurrency=5):
     """Execute the prompt manipulation pipeline."""
@@ -344,7 +586,7 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from rich.console import Console
-    from .prompt_probe import prompt_transform, list_transforms
+    from .prompt_probe import prompt_transform, list_transforms, _make_translator
     from .utils import _write_consolidated_md
 
     console = Console()
@@ -357,6 +599,9 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
         console.print("[yellow]No transforms selected.[/yellow]")
         return
 
+    # Always include the untransformed prompt as a baseline (index 0)
+    transforms = ["original"] + [t for t in transforms if t != "original"]
+
     # Resolve save path early so user sees it
     if not save_dir:
         save_dir = os.path.join("output", _prompt_to_slug(prompt))
@@ -367,23 +612,43 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
         console.print(f"  [dim]Output model: {output_model}[/dim]")
     console.print(f"  [dim]Output folder: {save_dir}/[/dim]")
 
-    # Phase 1: Run transforms concurrently
+    # Phase 1: Run transforms concurrently. Translators are two-phase:
+    # mutate returns a foreign-language prompt, postprocess translates the
+    # response back to English later. Index 0 ("original") is pre-filled
+    # with the untransformed prompt.
     transformed_prompts = [None] * len(transforms)
+    postprocessors = [None] * len(transforms)
+    transformed_prompts[0] = prompt
     failed = []
+    prompts_path = os.path.join(save_dir, "manipulations.md")
+
+    def _save_manipulations():
+        return _write_consolidated_md(
+            prompts_path, prompt, transforms, transformed_prompts,
+            manipulation_model=model,
+        )
 
     def _run_single(idx, name):
-        return idx, name, prompt_transform(prompt, name, model=model)
+        if name.startswith("translate_"):
+            language = name[len("translate_"):]
+            mutate_fn, postprocess_fn = _make_translator(language, prompt_model=model)
+            return idx, name, mutate_fn(prompt), postprocess_fn
+        return idx, name, prompt_transform(prompt, name, model=model), None
 
-    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+    executor = ThreadPoolExecutor(max_workers=concurrency)
+    interrupted = False
+    try:
         futures = {
             executor.submit(_run_single, i, name): i
-            for i, name in enumerate(transforms)
+            for i, name in enumerate(transforms) if i != 0
         }
-        done_count = 0
+        console.print(f"  [1/{len(transforms)}] [green]original[/green]")
+        done_count = 1
         for future in as_completed(futures):
             try:
-                idx, name, result = future.result()
+                idx, name, result, postprocess_fn = future.result()
                 transformed_prompts[idx] = result
+                postprocessors[idx] = postprocess_fn
                 done_count += 1
                 console.print(f"  [{done_count}/{len(transforms)}] [green]{name}[/green]")
             except Exception as e:
@@ -391,26 +656,33 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
                 failed.append((transforms[idx], str(e)))
                 done_count += 1
                 console.print(f"  [{done_count}/{len(transforms)}] [red]{transforms[idx]} — failed: {e}[/red]")
+            _save_manipulations()
+        executor.shutdown(wait=True)
+    except KeyboardInterrupt:
+        interrupted = True
+        executor.shutdown(wait=False, cancel_futures=True)
+        _save_manipulations()
+        console.print(f"\n[yellow]Interrupted — saved partial manipulations to {prompts_path}[/yellow]\n")
+        _print_view_hint(console, prompts_path)
+        return
 
-    # Remove failed transforms
-    if failed:
-        good_indices = [i for i in range(len(transforms)) if transformed_prompts[i] is not None]
+    # Remove failed / incomplete transforms
+    good_indices = [i for i in range(len(transforms)) if transformed_prompts[i] is not None]
+    if len(good_indices) < len(transforms):
         transforms = [transforms[i] for i in good_indices]
         transformed_prompts = [transformed_prompts[i] for i in good_indices]
+        postprocessors = [postprocessors[i] for i in good_indices]
         console.print(f"\n[yellow]{len(failed)} transform(s) failed, continuing with {len(transforms)}[/yellow]")
 
     if not transforms:
         console.print("[red]All transforms failed.[/red]")
         return
 
-    # Save manipulated prompts immediately
-    prompts_path = os.path.join(save_dir, "manipulations.md")
-    saved = _write_consolidated_md(
-        prompts_path, prompt, transforms, transformed_prompts,
-        manipulation_model=model,
-    )
+    saved = _save_manipulations()
     console.print(f"\n[bold green]{len(transforms)} transforms saved.[/bold green]")
-    console.print(f"  [dim]{saved}[/dim]")
+    console.print(f"  [dim]{saved}[/dim]\n")
+    if not output_model:
+        _print_view_hint(console, saved)
 
     # Phase 2: Generate outputs and save consolidated file
     if output_model:
@@ -423,7 +695,16 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
             return idx, name, response
 
         responses = [None] * len(transforms)
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        outputs_path = os.path.join(save_dir, "outputs.md")
+
+        def _save_outputs():
+            return _write_consolidated_md(
+                outputs_path, prompt, transforms, transformed_prompts,
+                manipulation_model=model, output_model=output_model, responses=responses,
+            )
+
+        executor = ThreadPoolExecutor(max_workers=concurrency)
+        try:
             futures = {
                 executor.submit(_generate_single, i, name, tp): i
                 for i, (name, tp) in enumerate(zip(transforms, transformed_prompts))
@@ -438,15 +719,54 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
                 except Exception as e:
                     done_count += 1
                     console.print(f"  [{done_count}/{len(transforms)}] [red]{transforms[futures[future]]} — failed: {e}[/red]")
+                _save_outputs()
+            executor.shutdown(wait=True)
+        except KeyboardInterrupt:
+            executor.shutdown(wait=False, cancel_futures=True)
+            _save_outputs()
+            done = sum(1 for r in responses if r is not None)
+            console.print(f"\n[yellow]Interrupted — saved {done}/{len(transforms)} outputs to {outputs_path}[/yellow]\n")
+            _print_view_hint(console, outputs_path)
+            return
 
-        outputs_path = os.path.join(save_dir, "outputs.md")
-        saved_outputs = _write_consolidated_md(
-            outputs_path, prompt, transforms, transformed_prompts,
-            manipulation_model=model, output_model=output_model, responses=responses,
-        )
+        # Translate foreign-language responses back to English for translate_* transforms
+        def _postprocess_single(idx, name, postprocess_fn, response):
+            return idx, name, postprocess_fn(response)
+
+        pending = [
+            (i, transforms[i], postprocessors[i], responses[i])
+            for i in range(len(transforms))
+            if postprocessors[i] is not None and responses[i] is not None
+        ]
+        if pending:
+            console.print(f"\n[bold]Translating {len(pending)} response(s) back to english...[/bold]")
+            executor = ThreadPoolExecutor(max_workers=concurrency)
+            try:
+                futures = {
+                    executor.submit(_postprocess_single, i, name, fn, resp): i
+                    for i, name, fn, resp in pending
+                }
+                for future in as_completed(futures):
+                    try:
+                        idx, name, final = future.result()
+                        responses[idx] = final
+                        console.print(f"  [green]{name}[/green]")
+                    except Exception as e:
+                        console.print(f"  [red]{transforms[futures[future]]} — back-translate failed: {e}[/red]")
+                    _save_outputs()
+                executor.shutdown(wait=True)
+            except KeyboardInterrupt:
+                executor.shutdown(wait=False, cancel_futures=True)
+                _save_outputs()
+                console.print(f"\n[yellow]Interrupted during back-translation — saved partial outputs to {outputs_path}[/yellow]\n")
+                _print_view_hint(console, outputs_path)
+                return
+
+        saved_outputs = _save_outputs()
         output_count = sum(1 for r in responses if r is not None)
         console.print(f"\n[bold green]{output_count} outputs saved.[/bold green]")
-        console.print(f"  [dim]{saved_outputs}[/dim]")
+        console.print(f"  [dim]{saved_outputs}[/dim]\n")
+        _print_view_hint(console, saved_outputs)
 
 
 def _model_to_provider(model_name):
@@ -537,7 +857,10 @@ def _select_compare_models(checked_default=True):
     if selected is None:
         return None
 
-    console.print(f"\n  [bold]{len(selected)} model(s) selected[/bold]\n")
+    console.print(f"\n  [bold]{len(selected)} model(s) selected:[/bold]")
+    for m in selected:
+        console.print(f"    • {m}")
+    console.print()
     return selected
 
 
@@ -745,6 +1068,9 @@ def _run_compare(prompt, models, evaluate, eval_model, save_dir, metrics=None):
         eval_thread.start()
         eval_thread.join()  # Wait for eval to finish before process exits
 
+    console.print()
+    _print_view_hint(console, filepath)
+
 
 def _write_grid_md(result, filepath):
     """Write grid search results to a single consolidated markdown file."""
@@ -882,6 +1208,9 @@ def _run_grid_search(prompt, models, transforms, eval_model, save_dir):
         console.print(f"  Model: [bold]{result['top_model']}[/bold]")
         console.print(f"  Score: [bold]{best_score:.2f}[/bold]")
 
+    console.print()
+    _print_view_hint(console, filepath)
+
 
 def _interactive_main():
     """Interactive mode — shown when user runs `spaceshift` with no args."""
@@ -890,7 +1219,7 @@ def _interactive_main():
     from rich.console import Console
     console = Console()
 
-    console.print("\n[bold]spaceshift[/bold] [dim]— open research toolkit[/dim]\n")
+    console.print("\n[bold]spaceshift[/bold] [dim]— move through prompts in every direction[/dim]\n")
 
     # Show current providers
     providers = _get_providers()
@@ -905,6 +1234,7 @@ def _interactive_main():
                 Choice("Compare Models", value="compare"),
                 Choice("Grid Search and Evaluation", value="grid"),
                 Choice("Prompt Tree", value="tree"),
+                Choice("Prompt Chain", value="chain"),
                 Separator(),
                 Choice("Manage API Keys", value="keys"),
             ],
@@ -1003,20 +1333,17 @@ def _interactive_main():
                     else:
                         step = 2
                 elif step == 2:
-                    eval_opts = questionary.checkbox(
-                        "Options:",
+                    eval_choice = questionary.select(
+                        "Evaluation:",
                         choices=[
-                            questionary.Choice(
-                                "Enable Pairwise Model Evaluation of Responses",
-                                value="evaluate",
-                                checked=False,
-                            ),
+                            "Pairwise Evaluate after Generation",
+                            "No Evaluation",
                         ],
                     ).ask()
-                    if eval_opts is None:
+                    if eval_choice is None:
                         step = 1
                     else:
-                        run_eval = "evaluate" in eval_opts
+                        run_eval = eval_choice == "Pairwise Evaluate after Generation"
                         if run_eval:
                             step = 3
                         else:
@@ -1123,6 +1450,195 @@ def _interactive_main():
             providers = _get_providers()
             if providers:
                 console.print(f"  [dim]{len(providers)} provider(s): {', '.join(providers)}[/dim]\n")
+        elif mode == "tree":
+            prompt = questionary.text(
+                "Enter your prompt:",
+                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+            ).ask()
+            if prompt is None:
+                continue
+
+            console.print("\n[bold]Configure tree directions[/bold]\n")
+
+            # --- Sub ---
+            console.print("  [bold cyan]Sub (Decomposition)[/bold cyan]")
+            console.print("  [dim]Breaks your prompt into narrower, focused subprompts — goes DOWN into specifics.[/dim]\n")
+            sub_depth = questionary.text(
+                "  How many levels deep? (0 to skip):",
+                default="1",
+                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
+            ).ask()
+            if sub_depth is None:
+                continue
+            sub_n = None
+            sub_depth = int(sub_depth.strip())
+            if sub_depth > 0:
+                sub_n = []
+                for level in range(sub_depth):
+                    default = "5" if level == 0 else "3"
+                    count = questionary.text(
+                        f"  Prompts at level {level + 1}?",
+                        default=default,
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
+                    ).ask()
+                    if count is None:
+                        sub_n = None
+                        break
+                    sub_n.append(int(count.strip()))
+                if sub_n is not None and len(sub_n) != sub_depth:
+                    continue
+
+            # --- Super ---
+            console.print("\n  [bold red]Super (Abstraction)[/bold red]")
+            console.print("  [dim]Generates broader parent prompts that contain yours — goes UP in abstraction.[/dim]\n")
+            super_depth = questionary.text(
+                "  How many levels deep? (0 to skip):",
+                default="1",
+                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
+            ).ask()
+            if super_depth is None:
+                continue
+            super_n = None
+            super_depth = int(super_depth.strip())
+            if super_depth > 0:
+                super_n = []
+                for level in range(super_depth):
+                    default = "3"
+                    count = questionary.text(
+                        f"  Prompts at level {level + 1}?",
+                        default=default,
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
+                    ).ask()
+                    if count is None:
+                        super_n = None
+                        break
+                    super_n.append(int(count.strip()))
+                if super_n is not None and len(super_n) != super_depth:
+                    continue
+
+            # --- Side ---
+            console.print("\n  [bold green]Side (Lateral)[/bold green]")
+            console.print("  [dim]Creates alternative prompts at the same level — goes SIDEWAYS to explore parallels.[/dim]\n")
+            side_depth = questionary.text(
+                "  How many levels deep? (0 to skip):",
+                default="1",
+                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
+            ).ask()
+            if side_depth is None:
+                continue
+            side_n = None
+            side_depth = int(side_depth.strip())
+            if side_depth > 0:
+                side_n = []
+                for level in range(side_depth):
+                    default = "4"
+                    count = questionary.text(
+                        f"  Prompts at level {level + 1}?",
+                        default=default,
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
+                    ).ask()
+                    if count is None:
+                        side_n = None
+                        break
+                    side_n.append(int(count.strip()))
+                if side_n is not None and len(side_n) != side_depth:
+                    continue
+
+            if sub_n is None and super_n is None and side_n is None:
+                console.print("[yellow]At least one direction must have depth > 0.[/yellow]\n")
+                continue
+
+            console.print("")
+            total = 1
+            for label, n_list in [("Sub", sub_n), ("Super", super_n), ("Side", side_n)]:
+                if n_list:
+                    count, breakdown = _calculate_tree_count(n_list)
+                    if " + " in breakdown:
+                        console.print(f"  [dim]{label}: {breakdown} = {count}[/dim]")
+                    else:
+                        console.print(f"  [dim]{label}: {count}[/dim]")
+                    total += count
+            console.print(f"\n  [bold]{total} total prompts[/bold] will be generated\n")
+
+            console.print("[bold]Select tree-building model[/bold] (for generating prompts):")
+            model = _select_model(None)
+            if model is None:
+                continue
+
+            output_choice = questionary.select(
+                "Outputs:",
+                choices=[
+                    "No outputs (tree only)",
+                    "Generate LLM outputs for every prompt in the tree",
+                ],
+            ).ask()
+            if output_choice is None:
+                continue
+            generate_outputs = output_choice.startswith("Generate")
+
+            output_model = None
+            if generate_outputs:
+                console.print("\n[bold]Select output model[/bold] (for generating responses):")
+                output_model = _select_model(None)
+                if output_model is None:
+                    continue
+
+            default_dir = os.path.join("output", _prompt_to_slug(prompt))
+            save_dir = questionary.text(
+                "Output folder:",
+                default=default_dir,
+            ).ask()
+            if save_dir is None:
+                continue
+
+            _run_prompt_tree(
+                prompt.strip(), model,
+                sub_n=sub_n, super_n=super_n, side_n=side_n,
+                output_model=output_model,
+                save_dir=save_dir.strip(),
+            )
+            break
+        elif mode == "chain":
+            prompt = questionary.text(
+                "Enter your initial prompt:",
+                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+            ).ask()
+            if prompt is None:
+                continue
+
+            prompts = [prompt.strip()]
+            console.print("\n[dim]Add followups one at a time. Leave blank and press Enter to finish.[/dim]\n")
+            while True:
+                followup = questionary.text(
+                    f"  Followup {len(prompts)} (blank to finish):",
+                ).ask()
+                if followup is None:
+                    prompts = None
+                    break
+                if not followup.strip():
+                    break
+                prompts.append(followup.strip())
+
+            if prompts is None:
+                continue
+
+            console.print(f"\n  [bold]{len(prompts)} turn(s)[/bold] queued\n")
+
+            console.print("[bold]Select model[/bold]:")
+            model = _select_model(None)
+            if model is None:
+                continue
+
+            default_dir = os.path.join("output", _prompt_to_slug(prompts[0]))
+            save_dir = questionary.text(
+                "Output folder:",
+                default=default_dir,
+            ).ask()
+            if save_dir is None:
+                continue
+
+            _run_prompt_chain(prompts, model, save_dir=save_dir.strip())
+            break
         else:
             console.print(f"\n[dim]{mode} — coming soon[/dim]\n")
 

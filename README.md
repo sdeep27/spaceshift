@@ -4,18 +4,14 @@ An interactive CLI prompt exploration toolkit powered by LLMs. Manipulate prompt
 
 **[Full documentation at spcshft.com](https://spcshft.com)**
 
-```bash
-# Launch interactive mode
-spaceshift
+![spaceshift main menu](docs/public/screenshots/home.png)
 
-# Select from guided menus:
-# → Prompt Manipulate — explore prompt transformations
-# → Compare Models — rank model responses
-# → Grid Search — search across models × transforms
-# → Prompt Tree — visualize exploration paths
+```bash
+pip install spaceshift
+spaceshift
 ```
 
-All functionality is also available as a Python library for programmatic use.
+Pick a mode, pick a model from categorized rankings, enter your prompt. Results save as structured markdown with YAML frontmatter, and the built-in viewer opens automatically.
 
 ---
 
@@ -25,7 +21,7 @@ All functionality is also available as a Python library for programmatic use.
 pip install spaceshift
 ```
 
-On first run, spaceshift will guide you through setting up your API keys:
+On first run, spaceshift guides you through setting up API keys:
 
 ```bash
 $ spaceshift
@@ -45,28 +41,39 @@ No API keys found. Let's set up your providers.
 ✓ Configuration saved to ~/.spaceshift/config.json
 ```
 
-Keys are stored securely in `~/.spaceshift/config.json` and available globally. You can update or add keys anytime via the "Manage API Keys" option in the main menu.
-
-**For Python library usage:** You can still use a `.env` file in your project directory - it will be loaded automatically when you import spaceshift.
+Keys are stored in `~/.spaceshift/config.json` and available globally. Update them anytime via the **Manage API Keys** option in the main menu.
 
 ---
 
-### Interactive CLI
+### Modes
 
-Launch the interactive mode:
+#### Prompt Manipulate
 
-```bash
-spaceshift
-```
+Transform a prompt through 22 built-in operations — abstraction up/down, inversion, reflection, rotation, dimension shifts, translations, and more — then optionally generate responses for each variant.
 
-The CLI guides you through:
-- **Prompt Manipulate** — Transform prompts and explore variations
-- **Compare Models** — Run the same prompt across models and rank responses
-- **Grid Search** — Search across models × transforms simultaneously
-- **Prompt Tree** — Visualize the exploration space
-- **Manage API Keys** — Add, update, or view your configured API providers
+![Prompt Manipulate transform selection](docs/public/screenshots/prompt-manipulate.png)
 
-Pick a model from categorized rankings (optimal, best, fast, cheap, open), enter your prompt, and explore. Results are saved as structured markdown with YAML frontmatter, and the built-in viewer opens automatically.
+#### Prompt Tree
+
+Explore a prompt in three directions simultaneously: **sub** (decomposition into specifics), **super** (abstraction upward), and **side** (lateral alternatives). Configure depth per direction through a guided wizard.
+
+![Prompt Tree wizard](docs/public/screenshots/prompt-tree.png)
+
+#### Prompt Chain
+
+Build a multi-turn conversation by adding followups one at a time. Each turn runs with full prior context and saves alongside the chain history.
+
+![Prompt Chain followups](docs/public/screenshots/prompt-chain.png)
+
+#### Compare Models
+
+Run the same prompt across multiple models and rank the responses. Optionally add pairwise evaluation with a judge model and auto-generated or custom metrics.
+
+![Compare Models with pairwise evaluation](docs/public/screenshots/compare-models.png)
+
+#### Grid Search and Evaluation
+
+Sweep across models × transforms simultaneously and rank every combination to find what works best.
 
 ---
 

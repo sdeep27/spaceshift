@@ -69,14 +69,19 @@ def _write_consolidated_md(path, original_prompt, transforms, prompts,
         if has_outputs:
             lines.append("### Prompt\n")
 
-        # Blockquote the transformed prompt
-        for pline in prompt_text.splitlines():
-            lines.append(f"> {pline}" if pline.strip() else ">")
+        if prompt_text is None:
+            lines.append("> *(pending — run interrupted)*")
+        else:
+            for pline in prompt_text.splitlines():
+                lines.append(f"> {pline}" if pline.strip() else ">")
         lines.append("")
 
         if has_outputs and i < len(responses):
             lines.append("### Output\n")
-            lines.append(responses[i])
+            if responses[i] is None:
+                lines.append("*(pending — run interrupted)*")
+            else:
+                lines.append(responses[i])
             lines.append("")
 
     content = "\n".join(lines)
