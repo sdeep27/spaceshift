@@ -1367,11 +1367,11 @@ def _interactive_main():
             "What would you like to do?",
             choices=[
                 Choice("Prompt Manipulate", value="prompt"),
+                Choice("AutoPrompt", value="autoprompt"),
                 Choice("Compare Models", value="compare"),
                 Choice("Grid Search and Evaluation", value="grid"),
                 Choice("Prompt Tree", value="tree"),
                 Choice("Prompt Chain", value="chain"),
-                Choice("AutoPrompt", value="autoprompt"),
                 Separator(),
                 Choice("Manage API Keys", value="keys"),
             ],
